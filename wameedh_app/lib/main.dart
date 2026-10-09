@@ -1,0 +1,655 @@
+import 'dart:ui';
+import 'package:flutter/material.dart';
+import 'package:postgres/postgres.dart';
+
+late Pool dbPool;
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  dbPool = Pool.withEndpoints([
+    Endpoint(
+      host: 'ep-divine-tree-b5uupalq-pooler.c-7.us-east-2.aws.neon.tech',
+      database: 'neondb',
+      username: 'neondb_owner',
+      password: 'npg_MARdTOHp06Yn',
+      port: 5432,
+    )
+  ], settings: const PoolSettings(maxConnectionCount: 5));
+
+  // Initialize DB tables
+  await dbPool.execute('CREATE TABLE IF NOT EXISTS categories (name TEXT PRIMARY KEY)');
+  await dbPool.execute('''
+    CREATE TABLE IF NOT EXISTS inventory (
+      id TEXT PRIMARY KEY, name TEXT, quantity INT, category TEXT, date TEXT
+    )
+  ''');
+  await dbPool.execute('''
+    CREATE TABLE IF NOT EXISTS borrowers (
+      id TEXT PRIMARY KEY, person_name TEXT, email TEXT, phone TEXT,
+      inventory_id TEXT, item_taken TEXT, topic TEXT, quantity_taken INT, date TEXT
+    )
+  ''');
+  
+  // Migration for older backend database tables
+  await dbPool.execute('ALTER TABLE borrowers ADD COLUMN IF NOT EXISTS inventory_id TEXT');
+
+  runApp(const WameedhApp());
+}
+
+class WameedhApp extends StatelessWidget {
+  const WameedhApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Wameedh Material Organizer',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData.dark().copyWith(
+        scaffoldBackgroundColor: const Color(0xFF0f2027),
+        textTheme: ThemeData.dark().textTheme.apply(fontFamily: 'Roboto'),
+        colorScheme: const ColorScheme.dark(
+          primary: Colors.blueAccent,
+          secondary: Colors.amberAccent,
+        ),
+      ),
+      home: const MainDashboard(),
+    );
+  }
+}
+
+// --- Data Models ---
+class MaterialItem {
+  final String id;
+  final String name;
+  int quantity;
+  final String category; 
+  final String date;
+  MaterialItem(this.id, this.name, this.quantity, this.category, this.date);
+}
+
+class BorrowerLog {
+  final String id;
+  final String personName;
+  final String email;
+  final String phone;
+  final String inventoryId;
+  final String itemTaken;
+  final String topic;      
+  int quantityTaken; 
+  final String date;
+  BorrowerLog(this.id, this.personName, this.email, this.phone, this.inventoryId, this.itemTaken, this.topic, this.quantityTaken, this.date);
+}
+
+// --- Main Application State ---
+class MainDashboard extends StatefulWidget {
+  const MainDashboard({super.key});
+
+  @override
+  State<MainDashboard> createState() => _MainDashboardState();
+}
+
+class _MainDashboardState extends State<MainDashboard> {
+  int _currentViewIndex = 0; 
+
+  final List<String> _categories = [];
+  final List<MaterialItem> _inventory = [];
+  final List<BorrowerLog> _borrowers = [];
+
+  final TextEditingController _matNameController = TextEditingController();
+  final TextEditingController _matQtyController = TextEditingController(text: "1");
+  String? _selectedCategory;
+  String _filterCategory = "All";
+
+  final TextEditingController _personNameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _borrowQtyController = TextEditingController(text: "1");
+  String? _selectedInventoryItemId;
+  
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final catRes = await dbPool.execute('SELECT name FROM categories');
+      _categories.clear();
+      for (final row in catRes) {
+        _categories.add(row[0].toString());
+      }
+      if (_categories.isEmpty) {
+        _categories.addAll(["Sensors", "Microcontrollers", "Resistors & Capacitors"]);
+        for (var c in _categories) {
+          await dbPool.execute('INSERT INTO categories (name) VALUES (\$1) ON CONFLICT DO NOTHING', parameters: [c]);
+        }
+      }
+
+      final invRes = await dbPool.execute('SELECT id, name, quantity, category, date FROM inventory ORDER BY date DESC');
+      _inventory.clear();
+      for (final row in invRes) {
+        _inventory.add(MaterialItem(row[0] as String, row[1] as String, row[2] as int, row[3] as String, row[4] as String));
+      }
+
+      final borRes = await dbPool.execute('SELECT id, person_name, email, phone, inventory_id, item_taken, topic, quantity_taken, date FROM borrowers ORDER BY date DESC');
+      _borrowers.clear();
+      for (final row in borRes) {
+        // Handle migration where inventory_id might be null
+        String invId = row[4] != null ? row[4] as String : "";
+        _borrowers.add(BorrowerLog(row[0] as String, row[1] as String, row[2] as String, row[3] as String, invId, row[5] as String, row[6] as String, row[7] as int, row[8] as String));
+      }
+
+      setState(() {
+        if (_categories.isNotEmpty) _selectedCategory = _categories.first;
+        if (_inventory.isNotEmpty) _selectedInventoryItemId = _inventory.first.id;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print("Error loading data from DB: $e");
+    }
+  }
+
+  @override
+  void dispose() {
+    _matNameController.dispose();
+    _matQtyController.dispose();
+    _personNameController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    _borrowQtyController.dispose();
+    super.dispose();
+  }
+
+  void _showAddCategoryDialog() {
+    final TextEditingController newCatController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF203a43),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          title: const Text("Add New Topic", style: TextStyle(color: Colors.white)),
+          content: TextField(
+            controller: newCatController,
+            style: const TextStyle(color: Colors.white),
+            decoration: const InputDecoration(hintText: "e.g. Cables", hintStyle: TextStyle(color: Colors.white54)),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel", style: TextStyle(color: Colors.white70))),
+            ElevatedButton(
+              onPressed: () async {
+                final newCat = newCatController.text.trim();
+                if (newCat.isNotEmpty && !_categories.contains(newCat)) {
+                  await dbPool.execute('INSERT INTO categories (name) VALUES (\$1) ON CONFLICT DO NOTHING', parameters: [newCat]);
+                  setState(() {
+                    _categories.add(newCat);
+                    _selectedCategory = newCat;
+                  });
+                }
+                if (mounted) Navigator.pop(context);
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.amberAccent),
+              child: const Text("Add Topic", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+            )
+          ],
+        );
+      },
+    );
+  }
+
+  void _addInventoryItem() async {
+    if (_matNameController.text.trim().isEmpty) return;
+    
+    final newItemId = DateTime.now().millisecondsSinceEpoch.toString();
+    final newItem = MaterialItem(
+      newItemId,
+      _matNameController.text.trim(),
+      int.tryParse(_matQtyController.text) ?? 1,
+      _selectedCategory ?? _categories.first,
+      _getCurrentDate(),
+    );
+
+    await dbPool.execute('INSERT INTO inventory (id, name, quantity, category, date) VALUES (\$1, \$2, \$3, \$4, \$5)', 
+      parameters: [newItem.id, newItem.name, newItem.quantity, newItem.category, newItem.date]);
+
+    setState(() {
+      _inventory.insert(0, newItem);
+      _matNameController.clear();
+      _matQtyController.text = "1";
+      if (_selectedInventoryItemId == null) _selectedInventoryItemId = newItemId;
+    });
+  }
+
+  void _deleteInventoryItem(String id) async {
+    await dbPool.execute('DELETE FROM inventory WHERE id = \$1', parameters: [id]);
+    setState(() {
+      _inventory.removeWhere((item) => item.id == id);
+      if (_selectedInventoryItemId == id) {
+        _selectedInventoryItemId = _inventory.isNotEmpty ? _inventory.first.id : null;
+      }
+    });
+  }
+
+  void _addBorrowerLog() async {
+    if (_personNameController.text.trim().isEmpty || _selectedInventoryItemId == null) return;
+    final int qtyTaken = int.tryParse(_borrowQtyController.text) ?? 1;
+
+    final invIndex = _inventory.indexWhere((m) => m.id == _selectedInventoryItemId);
+    if (invIndex != -1) {
+      final item = _inventory[invIndex];
+      if (item.quantity < qtyTaken) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error: Cannot checkout ${qtyTaken}. Only ${item.quantity} in stock!"), backgroundColor: Colors.redAccent)
+        );
+        return;
+      }
+
+      int newStock = item.quantity - qtyTaken;
+      
+      await dbPool.execute('UPDATE inventory SET quantity = \$1 WHERE id = \$2', parameters: [newStock, item.id]);
+
+      final newLog = BorrowerLog(
+        DateTime.now().millisecondsSinceEpoch.toString(),
+        _personNameController.text.trim(),
+        _emailController.text.trim(),
+        _phoneController.text.trim(),
+        item.id,
+        item.name, 
+        item.category,
+        qtyTaken,
+        _getCurrentDate(),
+      );
+
+      await dbPool.execute('INSERT INTO borrowers (id, person_name, email, phone, inventory_id, item_taken, topic, quantity_taken, date) VALUES (\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9)', 
+        parameters: [newLog.id, newLog.personName, newLog.email, newLog.phone, newLog.inventoryId, newLog.itemTaken, newLog.topic, newLog.quantityTaken, newLog.date]);
+
+      setState(() {
+        _inventory[invIndex].quantity = newStock;
+        _borrowers.insert(0, newLog);
+        
+        // Only clear qty, keep user info for multiple borrow actions!
+        _borrowQtyController.text = "1";
+      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Checkout successful!"), backgroundColor: Colors.green));
+    }
+  }
+
+  void _returnItemDialog(BorrowerLog log) {
+    final TextEditingController returnQtyCtrl = TextEditingController(text: log.quantityTaken.toString());
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF203a43),
+          title: Text("Return ${log.itemTaken}", style: const TextStyle(color: Colors.white)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text("Total borrowed: ${log.quantityTaken}", style: const TextStyle(color: Colors.white70)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: returnQtyCtrl,
+                keyboardType: TextInputType.number,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(labelText: "Quantity to Return", labelStyle: TextStyle(color: Colors.white54)),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+            ElevatedButton(
+              onPressed: () async {
+                int returnQty = int.tryParse(returnQtyCtrl.text) ?? 0;
+                if (returnQty > 0 && returnQty <= log.quantityTaken) {
+                  await _processReturn(log, returnQty);
+                  if (mounted) Navigator.pop(context);
+                }
+              },
+              child: const Text("Process Return"),
+            )
+          ],
+        );
+      }
+    );
+  }
+
+  Future<void> _processReturn(BorrowerLog log, int returnQty) async {
+    // 1. Add stock back to inventory
+    final invIndex = _inventory.indexWhere((m) => m.id == log.inventoryId);
+    if (invIndex != -1) {
+      int newStock = _inventory[invIndex].quantity + returnQty;
+      await dbPool.execute('UPDATE inventory SET quantity = \$1 WHERE id = \$2', parameters: [newStock, log.inventoryId]);
+      setState(() => _inventory[invIndex].quantity = newStock);
+    }
+
+    // 2. Reduce quantity in borrower log
+    int newBorrowQty = log.quantityTaken - returnQty;
+    if (newBorrowQty > 0) {
+      await dbPool.execute('UPDATE borrowers SET quantity_taken = \$1 WHERE id = \$2', parameters: [newBorrowQty, log.id]);
+      setState(() {
+        final bIndex = _borrowers.indexWhere((b) => b.id == log.id);
+        if (bIndex != -1) _borrowers[bIndex].quantityTaken = newBorrowQty;
+      });
+    } else {
+      await dbPool.execute('DELETE FROM borrowers WHERE id = \$1', parameters: [log.id]);
+      setState(() => _borrowers.removeWhere((b) => b.id == log.id));
+    }
+  }
+
+  String _getCurrentDate() {
+    final now = DateTime.now();
+    return "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(colors: [Color(0xFF0f2027), Color(0xFF203a43), Color(0xFF2c5364)]),
+        ),
+        child: Row(
+          children: [
+            GlassContainer(
+              width: 250, borderRadius: BorderRadius.zero,
+              child: Column(
+                children: [
+                  const SizedBox(height: 40),
+                  const Text("WAMEEDH", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 2, color: Colors.amberAccent)),
+                  const SizedBox(height: 50),
+                  _SidebarItem(icon: Icons.inventory_2, title: "Inventory", isActive: _currentViewIndex == 0, onTap: () => setState(() => _currentViewIndex = 0)),
+                  _SidebarItem(icon: Icons.people, title: "Borrowers Log", isActive: _currentViewIndex == 1, onTap: () => setState(() => _currentViewIndex = 1)),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(32.0),
+                child: _currentViewIndex == 0 ? _buildInventoryView() : _buildBorrowersView(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInventoryView() {
+    final filteredInventory = _filterCategory == "All" ? _inventory : _inventory.where((item) => item.category == _filterCategory).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text("📦 Electronics Inventory", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)),
+              child: Row(
+                children: [
+                  const Icon(Icons.filter_list, color: Colors.white54),
+                  const SizedBox(width: 10),
+                  DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _filterCategory,
+                      dropdownColor: const Color(0xFF203a43),
+                      items: ["All", ..._categories].map((c) => DropdownMenuItem(value: c, child: Text(c == "All" ? "Show All Topics" : "Topic: $c", style: const TextStyle(color: Colors.white)))).toList(),
+                      onChanged: (val) => setState(() => _filterCategory = val!),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        GlassContainer(
+          padding: const EdgeInsets.all(24),
+          child: Row(
+            children: [
+              Expanded(flex: 3, child: _buildTextField(_matNameController, "Material Name (e.g. ESP32)")),
+              const SizedBox(width: 12),
+              Expanded(flex: 1, child: _buildTextField(_matQtyController, "Qty", isNumber: true)),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 3,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(10)),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: _selectedCategory,
+                            dropdownColor: const Color(0xFF203a43),
+                            isExpanded: true,
+                            items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(color: Colors.white)))).toList(),
+                            onChanged: (val) => setState(() => _selectedCategory = val),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(icon: const Icon(Icons.add_circle, color: Colors.amberAccent, size: 36), onPressed: _showAddCategoryDialog),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              ElevatedButton.icon(
+                onPressed: _addInventoryItem, icon: const Icon(Icons.add, color: Colors.white), label: const Text("Add", style: TextStyle(color: Colors.white)),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, padding: const EdgeInsets.all(20)),
+              )
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+        Expanded(
+          child: GlassContainer(
+            padding: const EdgeInsets.all(0),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.2)))),
+                  child: Row(
+                    children: const [
+                      Expanded(flex: 3, child: Text("Material Name", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white))),
+                      Expanded(flex: 2, child: Text("Topic", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.amberAccent))),
+                      Expanded(flex: 1, child: Text("Qty in Stock", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.greenAccent))),
+                      Expanded(flex: 2, child: Text("Date", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white))),
+                      SizedBox(width: 48), 
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: filteredInventory.isEmpty ? const Center(child: Text("No items found.", style: TextStyle(color: Colors.white54, fontSize: 18)))
+                    : ListView.builder(
+                        itemCount: filteredInventory.length,
+                        itemBuilder: (context, index) {
+                          final item = filteredInventory[index];
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.05)))),
+                            child: Row(
+                              children: [
+                                Expanded(flex: 3, child: Text(item.name, style: const TextStyle(fontSize: 18, color: Colors.white))),
+                                Expanded(flex: 2, child: Align(alignment: Alignment.centerLeft, child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)), child: Text(item.category, style: const TextStyle(color: Colors.amberAccent, fontSize: 14))))),
+                                Expanded(flex: 1, child: Text("${item.quantity}", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.greenAccent))),
+                                Expanded(flex: 2, child: Text(item.date, style: const TextStyle(color: Colors.white70, fontSize: 14))),
+                                IconButton(icon: const Icon(Icons.delete_outline, color: Colors.redAccent), onPressed: () => _deleteInventoryItem(item.id)),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBorrowersView() {
+    if (_selectedInventoryItemId != null && !_inventory.any((m) => m.id == _selectedInventoryItemId)) {
+      _selectedInventoryItemId = _inventory.isNotEmpty ? _inventory.first.id : null;
+    }
+    
+    // Group borrowers by name + phone
+    Map<String, List<BorrowerLog>> groupedLogs = {};
+    for (var log in _borrowers) {
+      String key = "${log.personName}|${log.phone}|${log.email}";
+      if (!groupedLogs.containsKey(key)) groupedLogs[key] = [];
+      groupedLogs[key]!.add(log);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text("📝 Checkout Log", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
+        const SizedBox(height: 24),
+        GlassContainer(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(flex: 2, child: _buildTextField(_personNameController, "Person's Name")),
+                  const SizedBox(width: 12),
+                  Expanded(flex: 2, child: _buildTextField(_phoneController, "Phone Number")),
+                  const SizedBox(width: 12),
+                  Expanded(flex: 2, child: _buildTextField(_emailController, "Email Address")),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(10)),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          hint: const Text("Select Material...", style: TextStyle(color: Colors.white54)),
+                          value: _selectedInventoryItemId,
+                          dropdownColor: const Color(0xFF203a43),
+                          isExpanded: true,
+                          items: _inventory.map((m) => DropdownMenuItem(value: m.id, child: Text("${m.name} (In Stock: ${m.quantity})", style: const TextStyle(color: Colors.white)))).toList(),
+                          onChanged: (val) => setState(() => _selectedInventoryItemId = val),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(flex: 1, child: _buildTextField(_borrowQtyController, "Qty Taken", isNumber: true)),
+                  const SizedBox(width: 12),
+                  ElevatedButton.icon(
+                    onPressed: _inventory.isEmpty ? null : _addBorrowerLog, icon: const Icon(Icons.assignment_ind, color: Colors.white), label: const Text("Checkout", style: TextStyle(color: Colors.white)),
+                    style: ElevatedButton.styleFrom(backgroundColor: _inventory.isEmpty ? Colors.grey : Colors.green, padding: const EdgeInsets.all(20)),
+                  )
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+        Expanded(
+          child: GlassContainer(
+            padding: const EdgeInsets.all(0),
+            child: groupedLogs.isEmpty ? const Center(child: Text("No records.", style: TextStyle(color: Colors.white54, fontSize: 18)))
+              : ListView.builder(
+              padding: const EdgeInsets.all(24),
+              itemCount: groupedLogs.length,
+              itemBuilder: (context, index) {
+                String key = groupedLogs.keys.elementAt(index);
+                List<BorrowerLog> userLogs = groupedLogs[key]!;
+                BorrowerLog first = userLogs.first;
+                
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 24),
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(15),
+                    border: Border.all(color: Colors.white.withOpacity(0.1)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.person, color: Colors.amberAccent, size: 28),
+                          const SizedBox(width: 12),
+                          Text(first.personName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+                          const Spacer(),
+                          Text("${first.phone}  •  ${first.email}", style: const TextStyle(color: Colors.white70, fontSize: 16)),
+                        ],
+                      ),
+                      const Divider(color: Colors.white24, height: 32),
+                      ...userLogs.map((log) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          children: [
+                            Expanded(flex: 3, child: Text(log.itemTaken, style: const TextStyle(fontSize: 18, color: Colors.blueAccent))),
+                            Expanded(flex: 1, child: Text(log.topic, style: const TextStyle(color: Colors.white70, fontSize: 14))),
+                            Expanded(flex: 1, child: Text("Qty: ${log.quantityTaken}", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.greenAccent))),
+                            Expanded(flex: 1, child: Text(log.date, style: const TextStyle(color: Colors.white54, fontSize: 14))),
+                            TextButton.icon(
+                              onPressed: () => _returnItemDialog(log),
+                              icon: const Icon(Icons.keyboard_return, color: Colors.amberAccent),
+                              label: const Text("Return", style: TextStyle(color: Colors.amberAccent)),
+                            ),
+                          ],
+                        ),
+                      )).toList(),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTextField(TextEditingController controller, String label, {bool isNumber = false}) {
+    return TextField(
+      controller: controller, keyboardType: isNumber ? TextInputType.number : TextInputType.text, style: const TextStyle(color: Colors.white),
+      decoration: InputDecoration(labelText: label, labelStyle: const TextStyle(color: Colors.white54), filled: true, fillColor: Colors.black26, border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none)),
+    );
+  }
+}
+
+class _SidebarItem extends StatelessWidget {
+  final IconData icon; final String title; final bool isActive; final VoidCallback onTap;
+  const _SidebarItem({required this.icon, required this.title, required this.isActive, required this.onTap});
+  @override Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: isActive ? Colors.white.withOpacity(0.15) : Colors.transparent, borderRadius: BorderRadius.circular(12)),
+        child: Row(children: [Icon(icon, color: isActive ? Colors.blueAccent : Colors.white54), const SizedBox(width: 16), Text(title, style: TextStyle(color: isActive ? Colors.white : Colors.white70, fontSize: 16, fontWeight: FontWeight.bold))]),
+      ),
+    );
+  }
+}
+
+class GlassContainer extends StatelessWidget {
+  final Widget child; final EdgeInsetsGeometry? padding; final double? width; final BorderRadius? borderRadius;
+  const GlassContainer({super.key, required this.child, this.padding, this.width, this.borderRadius});
+  @override Widget build(BuildContext context) {
+    return SizedBox(width: width, child: ClipRRect(borderRadius: borderRadius ?? BorderRadius.circular(15), child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0), child: Container(padding: padding, decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: borderRadius ?? BorderRadius.circular(15), border: Border.all(color: Colors.white.withOpacity(0.1), width: 1.5)), child: child))));
+  }
+}

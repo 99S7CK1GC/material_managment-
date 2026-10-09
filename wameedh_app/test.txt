@@ -1,0 +1,1 @@
+await dbPool.execute("UPDATE inventory SET quantity = \$1 WHERE id = \$2")
