@@ -1,19 +1,22 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:postgres/postgres.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 late Pool dbPool;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  await dotenv.load(fileName: ".env");
+  
   dbPool = Pool.withEndpoints([
     Endpoint(
-      host: 'ep-divine-tree-b5uupalq-pooler.c-7.us-east-2.aws.neon.tech',
-      database: 'neondb',
-      username: 'neondb_owner',
-      password: 'npg_MARdTOHp06Yn',
-      port: 5432,
+      host: dotenv.env['DB_HOST']!,
+      database: dotenv.env['DB_NAME']!,
+      username: dotenv.env['DB_USER']!,
+      password: dotenv.env['DB_PASSWORD']!,
+      port: int.parse(dotenv.env['DB_PORT'] ?? '5432'),
     )
   ], settings: const PoolSettings(maxConnectionCount: 5));
 
