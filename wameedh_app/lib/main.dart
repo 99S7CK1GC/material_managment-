@@ -64,9 +64,9 @@ class WameedhApp extends StatelessWidget {
 // --- Data Models ---
 class MaterialItem {
   final String id;
-  final String name;
+  String name;
   int quantity;
-  final String category; 
+  String category; 
   final String date;
   MaterialItem(this.id, this.name, this.quantity, this.category, this.date);
 }
@@ -235,6 +235,130 @@ class _MainDashboardState extends State<MainDashboard> {
         _selectedInventoryItemId = _inventory.isNotEmpty ? _inventory.first.id : null;
       }
     });
+  }
+
+  void _editInventoryItemDialog(MaterialItem item) {
+    final nameCtrl = TextEditingController(text: item.name);
+    final qtyCtrl = TextEditingController(text: item.quantity.toString());
+    String selectedCat = item.category;
+    if (!_categories.contains(selectedCat) && _categories.isNotEmpty) {
+      selectedCat = _categories.first;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF203a43),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: const [
+                  Icon(Icons.edit, color: Colors.blueAccent),
+                  SizedBox(width: 10),
+                  Text("Edit Material", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text("Material Name", style: TextStyle(color: Colors.white70, fontSize: 13)),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: nameCtrl,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: Colors.black26,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text("Category / Topic", style: TextStyle(color: Colors.white70, fontSize: 13)),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(10)),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: _categories.contains(selectedCat) ? selectedCat : null,
+                          dropdownColor: const Color(0xFF203a43),
+                          isExpanded: true,
+                          items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(color: Colors.white)))).toList(),
+                          onChanged: (val) {
+                            if (val != null) {
+                              setDialogState(() => selectedCat = val);
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text("Quantity in Stock", style: TextStyle(color: Colors.white70, fontSize: 13)),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: qtyCtrl,
+                      keyboardType: TextInputType.number,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: Colors.black26,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Cancel", style: TextStyle(color: Colors.white60)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueAccent,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: () async {
+                    final newName = nameCtrl.text.trim();
+                    final newQty = int.tryParse(qtyCtrl.text.trim());
+                    if (newName.isEmpty || newQty == null || newQty < 0) {
+                      return;
+                    }
+                    await _updateInventoryItem(item.id, newName, newQty, selectedCat);
+                    if (mounted) Navigator.pop(context);
+                  },
+                  child: const Text("Save Changes", style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _updateInventoryItem(String id, String newName, int newQty, String newCategory) async {
+    await dbPool.execute(
+      'UPDATE inventory SET name = \$1, quantity = \$2, category = \$3 WHERE id = \$4',
+      parameters: [newName, newQty, newCategory, id],
+    );
+    setState(() {
+      final index = _inventory.indexWhere((m) => m.id == id);
+      if (index != -1) {
+        _inventory[index].name = newName;
+        _inventory[index].quantity = newQty;
+        _inventory[index].category = newCategory;
+      }
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Material updated successfully!"), backgroundColor: Colors.blueAccent),
+      );
+    }
   }
 
   void _addBorrowerLog() async {
@@ -468,7 +592,7 @@ class _MainDashboardState extends State<MainDashboard> {
                       Expanded(flex: 2, child: Text("Topic", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.amberAccent))),
                       Expanded(flex: 1, child: Text("Qty in Stock", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.greenAccent))),
                       Expanded(flex: 2, child: Text("Date", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white))),
-                      SizedBox(width: 48), 
+                      SizedBox(width: 96), 
                     ],
                   ),
                 ),
@@ -487,7 +611,21 @@ class _MainDashboardState extends State<MainDashboard> {
                                 Expanded(flex: 2, child: Align(alignment: Alignment.centerLeft, child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)), child: Text(item.category, style: const TextStyle(color: Colors.amberAccent, fontSize: 14))))),
                                 Expanded(flex: 1, child: Text("${item.quantity}", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.greenAccent))),
                                 Expanded(flex: 2, child: Text(item.date, style: const TextStyle(color: Colors.white70, fontSize: 14))),
-                                IconButton(icon: const Icon(Icons.delete_outline, color: Colors.redAccent), onPressed: () => _deleteInventoryItem(item.id)),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      tooltip: "Edit Material",
+                                      icon: const Icon(Icons.edit_outlined, color: Colors.blueAccent),
+                                      onPressed: () => _editInventoryItemDialog(item),
+                                    ),
+                                    IconButton(
+                                      tooltip: "Delete Material",
+                                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                      onPressed: () => _deleteInventoryItem(item.id),
+                                    ),
+                                  ],
+                                ),
                               ],
                             ),
                           );
