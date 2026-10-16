@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:postgres/postgres.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:file_picker/file_picker.dart';
 
 late Pool dbPool;
 
@@ -24,7 +26,7 @@ void main() async {
   await dbPool.execute('CREATE TABLE IF NOT EXISTS categories (name TEXT PRIMARY KEY)');
   await dbPool.execute('''
     CREATE TABLE IF NOT EXISTS inventory (
-      id TEXT PRIMARY KEY, name TEXT, quantity INT, category TEXT, date TEXT
+      id TEXT PRIMARY KEY, name TEXT, quantity INT, category TEXT, date TEXT, image_data TEXT
     )
   ''');
   await dbPool.execute('''
@@ -34,8 +36,9 @@ void main() async {
     )
   ''');
   
-  // Migration for older backend database tables
+  // Migrations for older database tables
   await dbPool.execute('ALTER TABLE borrowers ADD COLUMN IF NOT EXISTS inventory_id TEXT');
+  await dbPool.execute('ALTER TABLE inventory ADD COLUMN IF NOT EXISTS image_data TEXT');
 
   runApp(const WameedhApp());
 }
@@ -68,7 +71,8 @@ class MaterialItem {
   int quantity;
   String category; 
   final String date;
-  MaterialItem(this.id, this.name, this.quantity, this.category, this.date);
+  String? imageData;
+  MaterialItem(this.id, this.name, this.quantity, this.category, this.date, [this.imageData]);
 }
 
 class BorrowerLog {
@@ -109,8 +113,106 @@ class _MainDashboardState extends State<MainDashboard> {
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _borrowQtyController = TextEditingController(text: "1");
   String? _selectedInventoryItemId;
+  String? _selectedImageBase64;
   
   bool _isLoading = true;
+
+  Future<String?> _pickAndProcessImage() async {
+    try {
+      final file = await FilePicker.pickFile(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'webp'],
+      );
+      if (file == null) return null;
+
+      final bytes = await file.xFile.readAsBytes();
+      if (bytes.isEmpty) return null;
+
+      final codec = await instantiateImageCodec(bytes, targetWidth: 300);
+      final frame = await codec.getNextFrame();
+      final byteData = await frame.image.toByteData(format: ImageByteFormat.png);
+      if (byteData == null) return null;
+
+      return base64Encode(byteData.buffer.asUint8List());
+    } catch (e) {
+      debugPrint("Error picking image: $e");
+      return null;
+    }
+  }
+
+  void _showImagePreviewDialog(MaterialItem item) {
+    if (item.imageData == null || item.imageData!.isEmpty) return;
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(24),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 500),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: const Color(0xFF203a43),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.5),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        item.name,
+                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white70),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: Image.memory(
+                    base64Decode(item.imageData!),
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 80, color: Colors.white38),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      Text("Category: ${item.category}", style: const TextStyle(color: Colors.amberAccent)),
+                      Text("Stock: ${item.quantity}", style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   @override
   void initState() {
@@ -132,10 +234,11 @@ class _MainDashboardState extends State<MainDashboard> {
         }
       }
 
-      final invRes = await dbPool.execute('SELECT id, name, quantity, category, date FROM inventory ORDER BY date DESC');
+      final invRes = await dbPool.execute('SELECT id, name, quantity, category, date, image_data FROM inventory ORDER BY date DESC');
       _inventory.clear();
       for (final row in invRes) {
-        _inventory.add(MaterialItem(row[0] as String, row[1] as String, row[2] as int, row[3] as String, row[4] as String));
+        final img = row[5] != null ? row[5] as String : null;
+        _inventory.add(MaterialItem(row[0] as String, row[1] as String, row[2] as int, row[3] as String, row[4] as String, img));
       }
 
       final borRes = await dbPool.execute('SELECT id, person_name, email, phone, inventory_id, item_taken, topic, quantity_taken, date FROM borrowers ORDER BY date DESC');
@@ -205,26 +308,65 @@ class _MainDashboardState extends State<MainDashboard> {
   }
 
   void _addInventoryItem() async {
-    if (_matNameController.text.trim().isEmpty) return;
+    final name = _matNameController.text.trim();
+    if (name.isEmpty) return;
+
+    // Check duplicate material name
+    final bool duplicate = _inventory.any(
+      (item) => item.name.trim().toLowerCase() == name.toLowerCase(),
+    );
+
+    if (duplicate) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.amber.shade900,
+          behavior: SnackBarBehavior.floating,
+          content: Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 28),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Material "$name" already exists in the inventory! Use the pencil icon to update its quantity.',
+                  style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
     
     final newItemId = DateTime.now().millisecondsSinceEpoch.toString();
     final newItem = MaterialItem(
       newItemId,
-      _matNameController.text.trim(),
+      name,
       int.tryParse(_matQtyController.text) ?? 1,
       _selectedCategory ?? _categories.first,
       _getCurrentDate(),
+      _selectedImageBase64,
     );
 
-    await dbPool.execute('INSERT INTO inventory (id, name, quantity, category, date) VALUES (\$1, \$2, \$3, \$4, \$5)', 
-      parameters: [newItem.id, newItem.name, newItem.quantity, newItem.category, newItem.date]);
+    await dbPool.execute('INSERT INTO inventory (id, name, quantity, category, date, image_data) VALUES (\$1, \$2, \$3, \$4, \$5, \$6)', 
+      parameters: [newItem.id, newItem.name, newItem.quantity, newItem.category, newItem.date, newItem.imageData]);
 
     setState(() {
       _inventory.insert(0, newItem);
       _matNameController.clear();
       _matQtyController.text = "1";
+      _selectedImageBase64 = null;
       if (_selectedInventoryItemId == null) _selectedInventoryItemId = newItemId;
     });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Added "$name" to inventory!'),
+        backgroundColor: Colors.green,
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   void _deleteInventoryItem(String id) async {
@@ -237,6 +379,63 @@ class _MainDashboardState extends State<MainDashboard> {
     });
   }
 
+  void _confirmDeleteDialog(MaterialItem item) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF203a43),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: const [
+              Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 28),
+              SizedBox(width: 10),
+              Text("Confirm Deletion", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Are you sure you want to permanently delete \"${item.name}\"?",
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                "Current Stock: ${item.quantity}  •  Category: ${item.category}",
+                style: const TextStyle(color: Colors.white60, fontSize: 13),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                "This action cannot be undone.",
+                style: TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.w500),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel", style: TextStyle(color: Colors.white60)),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              icon: const Icon(Icons.delete, color: Colors.white, size: 18),
+              label: const Text("Delete Item", style: TextStyle(color: Colors.white)),
+              onPressed: () {
+                Navigator.pop(context);
+                _deleteInventoryItem(item.id);
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void _editInventoryItemDialog(MaterialItem item) {
     final nameCtrl = TextEditingController(text: item.name);
     final qtyCtrl = TextEditingController(text: item.quantity.toString());
@@ -244,6 +443,7 @@ class _MainDashboardState extends State<MainDashboard> {
     if (!_categories.contains(selectedCat) && _categories.isNotEmpty) {
       selectedCat = _categories.first;
     }
+    String? currentImage = item.imageData;
 
     showDialog(
       context: context,
@@ -265,6 +465,69 @@ class _MainDashboardState extends State<MainDashboard> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Center(
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Container(
+                            width: 100,
+                            height: 100,
+                            decoration: BoxDecoration(
+                              color: Colors.black38,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: Colors.white24),
+                            ),
+                            child: currentImage != null && currentImage!.isNotEmpty
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(13),
+                                    child: Image.memory(
+                                      base64Decode(currentImage!),
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white38),
+                                    ),
+                                  )
+                                : const Icon(Icons.inventory_2_outlined, color: Colors.white38, size: 48),
+                          ),
+                          Positioned(
+                            bottom: -4,
+                            right: -4,
+                            child: InkWell(
+                              onTap: () async {
+                                final newImg = await _pickAndProcessImage();
+                                if (newImg != null) {
+                                  setDialogState(() => currentImage = newImg);
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(7),
+                                decoration: const BoxDecoration(
+                                  color: Colors.blueAccent,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.camera_alt, color: Colors.white, size: 16),
+                              ),
+                            ),
+                          ),
+                          if (currentImage != null && currentImage!.isNotEmpty)
+                            Positioned(
+                              top: -4,
+                              right: -4,
+                              child: InkWell(
+                                onTap: () => setDialogState(() => currentImage = null),
+                                child: Container(
+                                  padding: const EdgeInsets.all(5),
+                                  decoration: const BoxDecoration(
+                                    color: Colors.redAccent,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.close, color: Colors.white, size: 13),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     const Text("Material Name", style: TextStyle(color: Colors.white70, fontSize: 13)),
                     const SizedBox(height: 6),
                     TextField(
@@ -328,7 +591,21 @@ class _MainDashboardState extends State<MainDashboard> {
                     if (newName.isEmpty || newQty == null || newQty < 0) {
                       return;
                     }
-                    await _updateInventoryItem(item.id, newName, newQty, selectedCat);
+                    // Check if renaming collides with another existing material
+                    final bool conflict = _inventory.any(
+                      (m) => m.id != item.id && m.name.trim().toLowerCase() == newName.toLowerCase(),
+                    );
+                    if (conflict) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          backgroundColor: Colors.amber.shade900,
+                          content: Text('Another material with name "$newName" already exists!'),
+                        ),
+                      );
+                      return;
+                    }
+
+                    await _updateInventoryItem(item.id, newName, newQty, selectedCat, currentImage);
                     if (mounted) Navigator.pop(context);
                   },
                   child: const Text("Save Changes", style: TextStyle(color: Colors.white)),
@@ -341,10 +618,10 @@ class _MainDashboardState extends State<MainDashboard> {
     );
   }
 
-  Future<void> _updateInventoryItem(String id, String newName, int newQty, String newCategory) async {
+  Future<void> _updateInventoryItem(String id, String newName, int newQty, String newCategory, String? newImage) async {
     await dbPool.execute(
-      'UPDATE inventory SET name = \$1, quantity = \$2, category = \$3 WHERE id = \$4',
-      parameters: [newName, newQty, newCategory, id],
+      'UPDATE inventory SET name = \$1, quantity = \$2, category = \$3, image_data = \$4 WHERE id = \$5',
+      parameters: [newName, newQty, newCategory, newImage, id],
     );
     setState(() {
       final index = _inventory.indexWhere((m) => m.id == id);
@@ -352,6 +629,7 @@ class _MainDashboardState extends State<MainDashboard> {
         _inventory[index].name = newName;
         _inventory[index].quantity = newQty;
         _inventory[index].category = newCategory;
+        _inventory[index].imageData = newImage;
       }
     });
     if (mounted) {
@@ -541,6 +819,60 @@ class _MainDashboardState extends State<MainDashboard> {
           padding: const EdgeInsets.all(24),
           child: Row(
             children: [
+              InkWell(
+                onTap: () async {
+                  final img = await _pickAndProcessImage();
+                  if (img != null) {
+                    setState(() => _selectedImageBase64 = img);
+                  }
+                },
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: _selectedImageBase64 != null ? Colors.blueAccent : Colors.white24),
+                  ),
+                  child: _selectedImageBase64 != null
+                      ? Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(9),
+                              child: Image.memory(
+                                base64Decode(_selectedImageBase64!),
+                                width: 56,
+                                height: 56,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                            Positioned(
+                              top: -4,
+                              right: -4,
+                              child: InkWell(
+                                onTap: () => setState(() => _selectedImageBase64 = null),
+                                child: Container(
+                                  padding: const EdgeInsets.all(3),
+                                  decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
+                                  child: const Icon(Icons.close, size: 12, color: Colors.white),
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
+                      : Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Icon(Icons.add_a_photo_outlined, color: Colors.blueAccent, size: 22),
+                            SizedBox(height: 2),
+                            Text("Photo", style: TextStyle(color: Colors.white54, fontSize: 10)),
+                          ],
+                        ),
+                ),
+              ),
+              const SizedBox(width: 12),
               Expanded(flex: 3, child: _buildTextField(_matNameController, "Material Name (e.g. ESP32)")),
               const SizedBox(width: 12),
               Expanded(flex: 1, child: _buildTextField(_matQtyController, "Qty", isNumber: true)),
@@ -607,7 +939,51 @@ class _MainDashboardState extends State<MainDashboard> {
                             decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.05)))),
                             child: Row(
                               children: [
-                                Expanded(flex: 3, child: Text(item.name, style: const TextStyle(fontSize: 18, color: Colors.white))),
+                                Expanded(
+                                  flex: 3,
+                                  child: Row(
+                                    children: [
+                                      Tooltip(
+                                        message: item.imageData != null && item.imageData!.isNotEmpty ? "Click to view full photo" : "No photo",
+                                        child: InkWell(
+                                          onTap: item.imageData != null && item.imageData!.isNotEmpty
+                                              ? () => _showImagePreviewDialog(item)
+                                              : null,
+                                          borderRadius: BorderRadius.circular(8),
+                                          child: Container(
+                                            width: 44,
+                                            height: 44,
+                                            decoration: BoxDecoration(
+                                              color: Colors.white10,
+                                              borderRadius: BorderRadius.circular(8),
+                                              border: Border.all(color: Colors.white24),
+                                            ),
+                                            child: item.imageData != null && item.imageData!.isNotEmpty
+                                                ? ClipRRect(
+                                                    borderRadius: BorderRadius.circular(7),
+                                                    child: Image.memory(
+                                                      base64Decode(item.imageData!),
+                                                      width: 44,
+                                                      height: 44,
+                                                      fit: BoxFit.cover,
+                                                      errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white38, size: 20),
+                                                    ),
+                                                  )
+                                                : const Icon(Icons.inventory_2_outlined, color: Colors.white30, size: 22),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          item.name,
+                                          style: const TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.w500),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                                 Expanded(flex: 2, child: Align(alignment: Alignment.centerLeft, child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)), child: Text(item.category, style: const TextStyle(color: Colors.amberAccent, fontSize: 14))))),
                                 Expanded(flex: 1, child: Text("${item.quantity}", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.greenAccent))),
                                 Expanded(flex: 2, child: Text(item.date, style: const TextStyle(color: Colors.white70, fontSize: 14))),
@@ -622,7 +998,7 @@ class _MainDashboardState extends State<MainDashboard> {
                                     IconButton(
                                       tooltip: "Delete Material",
                                       icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                                      onPressed: () => _deleteInventoryItem(item.id),
+                                      onPressed: () => _confirmDeleteDialog(item),
                                     ),
                                   ],
                                 ),
