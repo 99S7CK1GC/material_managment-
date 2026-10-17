@@ -969,6 +969,173 @@ class _MainDashboardState extends State<MainDashboard> {
     }
   }
 
+  Future<void> _adjustBorrowerQuantity(BorrowerLog log, int delta) async {
+    if (delta > 0) {
+      final invIndex = _inventory.indexWhere((m) => m.id == log.inventoryId);
+      if (invIndex == -1 || _inventory[invIndex].quantity < delta) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Cannot borrow more: No stock available in inventory!"),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+        return;
+      }
+
+      int newStock = _inventory[invIndex].quantity - delta;
+      int newBorrowQty = log.quantityTaken + delta;
+
+      await dbPool.execute('UPDATE inventory SET quantity = \$1 WHERE id = \$2', parameters: [newStock, log.inventoryId]);
+      await dbPool.execute('UPDATE borrowers SET quantity_taken = \$1 WHERE id = \$2', parameters: [newBorrowQty, log.id]);
+
+      setState(() {
+        _inventory[invIndex].quantity = newStock;
+        final bIndex = _borrowers.indexWhere((b) => b.id == log.id);
+        if (bIndex != -1) _borrowers[bIndex].quantityTaken = newBorrowQty;
+      });
+    } else if (delta < 0) {
+      if (log.quantityTaken <= 1) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: const Color(0xFF203a43),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text("Return Final Item?", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            content: Text(
+              "Returning this item will complete and remove the checkout record for \"${log.itemTaken}\". Proceed?",
+              style: const TextStyle(color: Colors.white70),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Cancel", style: TextStyle(color: Colors.white60)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.amberAccent),
+                onPressed: () async {
+                  Navigator.pop(context);
+                  await _processReturn(log, 1);
+                },
+                child: const Text("Return & Close Log", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+              )
+            ],
+          ),
+        );
+        return;
+      }
+
+      await _processReturn(log, 1);
+    }
+  }
+
+  void _confirmDeleteBorrowerDialog(BorrowerLog log) {
+    bool restoreStock = true;
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDlgState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF203a43),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: const [
+                  Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 28),
+                  SizedBox(width: 10),
+                  Text("Delete Checkout Log", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Are you sure you want to delete this checkout record for ${log.personName}?",
+                    style: const TextStyle(color: Colors.white, fontSize: 16),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    "Item: ${log.itemTaken}  •  Qty: ${log.quantityTaken}  •  Date: ${log.date}",
+                    style: const TextStyle(color: Colors.white60, fontSize: 13),
+                  ),
+                  const SizedBox(height: 16),
+                  InkWell(
+                    onTap: () => setDlgState(() => restoreStock = !restoreStock),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          Checkbox(
+                            value: restoreStock,
+                            activeColor: Colors.amberAccent,
+                            checkColor: Colors.black,
+                            onChanged: (val) => setDlgState(() => restoreStock = val ?? true),
+                          ),
+                          Expanded(
+                            child: Text(
+                              "Return borrowed items (${log.quantityTaken}) back to inventory stock",
+                              style: const TextStyle(color: Colors.white, fontSize: 13),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Cancel", style: TextStyle(color: Colors.white60)),
+                ),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  icon: const Icon(Icons.delete, color: Colors.white, size: 18),
+                  label: const Text("Delete Record", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    await _deleteBorrowerLog(log, restoreStock: restoreStock);
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _deleteBorrowerLog(BorrowerLog log, {bool restoreStock = true}) async {
+    if (restoreStock) {
+      final invIndex = _inventory.indexWhere((m) => m.id == log.inventoryId);
+      if (invIndex != -1) {
+        int newStock = _inventory[invIndex].quantity + log.quantityTaken;
+        await dbPool.execute('UPDATE inventory SET quantity = \$1 WHERE id = \$2', parameters: [newStock, log.inventoryId]);
+        setState(() => _inventory[invIndex].quantity = newStock);
+      }
+    }
+
+    await dbPool.execute('DELETE FROM borrowers WHERE id = \$1', parameters: [log.id]);
+    setState(() => _borrowers.removeWhere((b) => b.id == log.id));
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(restoreStock
+              ? "Checkout record deleted & ${log.quantityTaken} items returned to stock."
+              : "Checkout record deleted."),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+  }
+
   String _getCurrentDate() {
     final now = DateTime.now();
     return "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
@@ -1579,14 +1746,54 @@ class _MainDashboardState extends State<MainDashboard> {
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         child: Row(
                           children: [
-                            Expanded(flex: 3, child: Text(log.itemTaken, style: const TextStyle(fontSize: 18, color: Colors.blueAccent))),
-                            Expanded(flex: 1, child: Text(log.topic, style: const TextStyle(color: Colors.white70, fontSize: 14))),
-                            Expanded(flex: 1, child: Text("Qty: ${log.quantityTaken}", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.greenAccent))),
-                            Expanded(flex: 1, child: Text(log.date, style: const TextStyle(color: Colors.white54, fontSize: 14))),
+                            Expanded(flex: 3, child: Text(log.itemTaken, style: const TextStyle(fontSize: 17, color: Colors.blueAccent, fontWeight: FontWeight.w600))),
+                            Expanded(flex: 2, child: Text(log.topic, style: const TextStyle(color: Colors.white70, fontSize: 14))),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.black26,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.white12),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.remove, color: Colors.amberAccent, size: 16),
+                                    tooltip: "Return 1 unit to stock",
+                                    padding: const EdgeInsets.all(4),
+                                    constraints: const BoxConstraints(),
+                                    onPressed: () => _adjustBorrowerQuantity(log, -1),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                                    child: Text(
+                                      "Qty: ${log.quantityTaken}",
+                                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.greenAccent),
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.add, color: Colors.greenAccent, size: 16),
+                                    tooltip: "Borrow 1 more unit",
+                                    padding: const EdgeInsets.all(4),
+                                    constraints: const BoxConstraints(),
+                                    onPressed: () => _adjustBorrowerQuantity(log, 1),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(flex: 2, child: Text(log.date, style: const TextStyle(color: Colors.white54, fontSize: 14))),
                             TextButton.icon(
                               onPressed: () => _returnItemDialog(log),
-                              icon: const Icon(Icons.keyboard_return, color: Colors.amberAccent),
+                              icon: const Icon(Icons.keyboard_return, color: Colors.amberAccent, size: 18),
                               label: const Text("Return", style: TextStyle(color: Colors.amberAccent)),
+                            ),
+                            const SizedBox(width: 4),
+                            IconButton(
+                              onPressed: () => _confirmDeleteBorrowerDialog(log),
+                              tooltip: "Delete Checkout Record",
+                              icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
                             ),
                           ],
                         ),

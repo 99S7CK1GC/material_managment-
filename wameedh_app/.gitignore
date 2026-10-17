@@ -49,3 +49,6 @@ app.*.map.json
 
 # Environment variables
 .env
+
+# Screenshots / generated assets
+flutter_*.png
