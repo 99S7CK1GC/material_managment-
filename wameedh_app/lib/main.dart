@@ -136,6 +136,10 @@ class _MainDashboardState extends State<MainDashboard> {
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _borrowQtyController = TextEditingController(text: "1");
   final TextEditingController _matDescController = TextEditingController();
+  final TextEditingController _searchNameController = TextEditingController();
+  final TextEditingController _searchTopicController = TextEditingController();
+  String _searchName = "";
+  String _searchTopic = "";
   String? _selectedInventoryItemId;
   String? _selectedImageBase64;
   
@@ -358,6 +362,8 @@ class _MainDashboardState extends State<MainDashboard> {
     _emailController.dispose();
     _phoneController.dispose();
     _borrowQtyController.dispose();
+    _searchNameController.dispose();
+    _searchTopicController.dispose();
     super.dispose();
   }
 
@@ -498,6 +504,10 @@ class _MainDashboardState extends State<MainDashboard> {
                       }
                       if (_selectedCategory == targetCat) _selectedCategory = newName;
                       if (_filterCategory == targetCat) _filterCategory = newName;
+                      if (_searchTopic == targetCat) {
+                        _searchTopic = newName;
+                        _searchTopicController.text = newName;
+                      }
                     });
 
                     if (mounted) Navigator.pop(context);
@@ -1177,65 +1187,200 @@ class _MainDashboardState extends State<MainDashboard> {
   }
 
   Widget _buildInventoryView() {
-    final filteredInventory = _filterCategory == "All" ? _inventory : _inventory.where((item) => item.category == _filterCategory).toList();
+    final filteredInventory = _inventory.where((item) {
+      final matchesSearchName = _searchName.isEmpty ||
+          item.name.toLowerCase().contains(_searchName.toLowerCase()) ||
+          (item.description != null && item.description!.toLowerCase().contains(_searchName.toLowerCase()));
+      final targetTopic = _searchTopic.isNotEmpty ? _searchTopic : _filterCategory;
+      final matchesTopic = targetTopic == "All" ||
+          targetTopic.isEmpty ||
+          item.category.toLowerCase().contains(targetTopic.toLowerCase());
+      return matchesSearchName && matchesTopic;
+    }).toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text("📦 Electronics Inventory", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
             Row(
               children: [
-                // Layout switcher (Table vs Card view)
+                const Text("📦 Electronics Inventory", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
+                const SizedBox(width: 14),
                 Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.table_rows_rounded),
-                        tooltip: "Table View",
-                        color: !_isCardView ? Colors.amberAccent : Colors.white54,
-                        onPressed: () {
-                          if (_isCardView) setState(() => _isCardView = false);
-                        },
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.grid_view_rounded),
-                        tooltip: "Card View",
-                        color: _isCardView ? Colors.amberAccent : Colors.white54,
-                        onPressed: () {
-                          if (!_isCardView) setState(() => _isCardView = true);
-                        },
-                      ),
-                    ],
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white10,
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.filter_list, color: Colors.white54),
-                      const SizedBox(width: 10),
-                      DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: _filterCategory,
-                          dropdownColor: const Color(0xFF203a43),
-                          items: ["All", ..._categories].map((c) => DropdownMenuItem(value: c, child: Text(c == "All" ? "Show All Topics" : "Topic: $c", style: const TextStyle(color: Colors.white)))).toList(),
-                          onChanged: (val) => setState(() => _filterCategory = val!),
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    "${filteredInventory.length} ${filteredInventory.length == 1 ? 'item' : 'items'}",
+                    style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 13),
                   ),
                 ),
               ],
             ),
+            // Layout switcher (Table vs Card view)
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.table_rows_rounded),
+                    tooltip: "Table View",
+                    color: !_isCardView ? Colors.amberAccent : Colors.white54,
+                    onPressed: () {
+                      if (_isCardView) setState(() => _isCardView = false);
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.grid_view_rounded),
+                    tooltip: "Card View",
+                    color: _isCardView ? Colors.amberAccent : Colors.white54,
+                    onPressed: () {
+                      if (!_isCardView) setState(() => _isCardView = true);
+                    },
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 16),
+        // Search Bars Row: Search by Name & Search by Topic
+        Row(
+          children: [
+            // Search Bar for Names
+            Expanded(
+              flex: 5,
+              child: Container(
+                height: 46,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _searchName.isNotEmpty ? Colors.blueAccent : Colors.white12),
+                ),
+                child: TextField(
+                  controller: _searchNameController,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.search, color: Colors.blueAccent, size: 20),
+                    hintText: "Search material by name...",
+                    hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                    suffixIcon: _searchNameController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, color: Colors.white54, size: 18),
+                            tooltip: "Clear Search",
+                            onPressed: () {
+                              setState(() {
+                                _searchNameController.clear();
+                                _searchName = "";
+                              });
+                            },
+                          )
+                        : null,
+                  ),
+                  onChanged: (val) => setState(() => _searchName = val.trim()),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            // Search Bar for Topics to Choose
+            Expanded(
+              flex: 4,
+              child: Container(
+                height: 46,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: (_searchTopic.isNotEmpty || _filterCategory != "All") ? Colors.amberAccent : Colors.white12),
+                ),
+                child: TextField(
+                  controller: _searchTopicController,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.category_outlined, color: Colors.amberAccent, size: 20),
+                    hintText: "Search or choose topic...",
+                    hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                    suffixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_searchTopicController.text.isNotEmpty || _filterCategory != "All")
+                          IconButton(
+                            icon: const Icon(Icons.clear, color: Colors.white54, size: 18),
+                            tooltip: "Reset Topic Filter",
+                            onPressed: () {
+                              setState(() {
+                                _searchTopicController.clear();
+                                _searchTopic = "";
+                                _filterCategory = "All";
+                              });
+                            },
+                          ),
+                        PopupMenuButton<String>(
+                          icon: const Icon(Icons.arrow_drop_down, color: Colors.white70),
+                          tooltip: "Choose Topic from List",
+                          color: const Color(0xFF203a43),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          onSelected: (val) {
+                            setState(() {
+                              if (val == "All") {
+                                _searchTopicController.clear();
+                                _searchTopic = "";
+                                _filterCategory = "All";
+                              } else {
+                                _searchTopicController.text = val;
+                                _searchTopic = val;
+                                _filterCategory = val;
+                              }
+                            });
+                          },
+                          itemBuilder: (context) {
+                            final topics = ["All", ..._categories];
+                            final currentActive = _searchTopic.isNotEmpty ? _searchTopic : _filterCategory;
+                            return topics.map((t) => PopupMenuItem(
+                              value: t,
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    t == "All" ? Icons.select_all : Icons.label_outline,
+                                    size: 18,
+                                    color: (t == currentActive || (currentActive == "All" && t == "All")) ? Colors.amberAccent : Colors.white54,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    t == "All" ? "Show All Topics" : t,
+                                    style: TextStyle(
+                                      color: (t == currentActive || (currentActive == "All" && t == "All")) ? Colors.amberAccent : Colors.white,
+                                      fontWeight: (t == currentActive || (currentActive == "All" && t == "All")) ? FontWeight.bold : FontWeight.normal,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )).toList();
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  onChanged: (val) {
+                    setState(() {
+                      _searchTopic = val.trim();
+                      _filterCategory = "All";
+                    });
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
         GlassContainer(
           padding: const EdgeInsets.all(20),
           child: Column(
@@ -1500,10 +1645,10 @@ class _MainDashboardState extends State<MainDashboard> {
     return GridView.builder(
       physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 300,
+        maxCrossAxisExtent: 310,
         mainAxisSpacing: 16,
         crossAxisSpacing: 16,
-        childAspectRatio: 0.78,
+        childAspectRatio: 0.82,
       ),
       itemCount: items.length,
       itemBuilder: (context, index) => _buildMaterialCard(items[index]),
@@ -1531,31 +1676,31 @@ class _MainDashboardState extends State<MainDashboard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image / Photo header
+            // Image / Photo header - Made significantly bigger (height: 195)
             Stack(
               children: [
                 InkWell(
                   onTap: bytes != null ? () => _showImagePreviewDialog(item) : null,
                   child: Container(
-                    height: 130,
+                    height: 195,
                     width: double.infinity,
                     color: Colors.black26,
                     child: bytes != null
                         ? Image.memory(
                             bytes,
-                            cacheWidth: 350,
+                            cacheWidth: 500,
                             fit: BoxFit.cover,
                             filterQuality: FilterQuality.low,
                             errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 36)),
                           )
-                        : const Center(child: Icon(Icons.inventory_2_outlined, color: Colors.white30, size: 44)),
+                        : const Center(child: Icon(Icons.inventory_2_outlined, color: Colors.white30, size: 52)),
                   ),
                 ),
                 Positioned(
                   top: 8,
                   right: 8,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                     decoration: BoxDecoration(
                       color: const Color(0xFF0f2027).withValues(alpha: 0.88),
                       borderRadius: BorderRadius.circular(10),
@@ -1569,17 +1714,17 @@ class _MainDashboardState extends State<MainDashboard> {
                 ),
               ],
             ),
-            // Details body
+            // Details body - balanced spacing without giant gap
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       item.name,
                       style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                     if (hasDesc) ...[
@@ -1612,9 +1757,9 @@ class _MainDashboardState extends State<MainDashboard> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     const Divider(color: Colors.white12, height: 1),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
