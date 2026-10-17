@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:postgres/postgres.dart';
@@ -72,9 +73,29 @@ class MaterialItem {
   int quantity;
   String category; 
   final String date;
-  String? imageData;
+  String? _imageData;
   String? description;
-  MaterialItem(this.id, this.name, this.quantity, this.category, this.date, [this.imageData, this.description]);
+  Uint8List? _cachedBytes;
+
+  MaterialItem(this.id, this.name, this.quantity, this.category, this.date, [String? imageData, this.description]) {
+    this.imageData = imageData;
+  }
+
+  String? get imageData => _imageData;
+  set imageData(String? val) {
+    _imageData = val;
+    if (val != null && val.isNotEmpty) {
+      try {
+        _cachedBytes = base64Decode(val);
+      } catch (_) {
+        _cachedBytes = null;
+      }
+    } else {
+      _cachedBytes = null;
+    }
+  }
+
+  Uint8List? get imageBytes => _cachedBytes;
 }
 
 class BorrowerLog {
@@ -189,11 +210,13 @@ class _MainDashboardState extends State<MainDashboard> {
                 const SizedBox(height: 14),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(14),
-                  child: Image.memory(
-                    base64Decode(item.imageData!),
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 80, color: Colors.white38),
-                  ),
+                  child: item.imageBytes != null
+                      ? Image.memory(
+                          item.imageBytes!,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 80, color: Colors.white38),
+                        )
+                      : const Icon(Icons.broken_image, size: 80, color: Colors.white38),
                 ),
                 const SizedBox(height: 14),
                 Container(
@@ -1183,7 +1206,7 @@ class _MainDashboardState extends State<MainDashboard> {
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.2)))),
+            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.2)))),
             child: Row(
               children: const [
                 Expanded(flex: 3, child: Text("Material Name", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white))),
@@ -1198,13 +1221,14 @@ class _MainDashboardState extends State<MainDashboard> {
             child: items.isEmpty
                 ? const Center(child: Text("No items found.", style: TextStyle(color: Colors.white54, fontSize: 18)))
                 : ListView.builder(
+                    physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
                     itemCount: items.length,
                     itemBuilder: (context, index) {
                       final item = items[index];
                       final hasDesc = item.description != null && item.description!.trim().isNotEmpty;
                       return Container(
                         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.05)))),
+                        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.05)))),
                         child: Row(
                           children: [
                             Expanded(
@@ -1212,9 +1236,9 @@ class _MainDashboardState extends State<MainDashboard> {
                               child: Row(
                                 children: [
                                   Tooltip(
-                                    message: item.imageData != null && item.imageData!.isNotEmpty ? "Click to view full photo" : "No photo",
+                                    message: item.imageBytes != null ? "Click to view full photo" : "No photo",
                                     child: InkWell(
-                                      onTap: item.imageData != null && item.imageData!.isNotEmpty
+                                      onTap: item.imageBytes != null
                                           ? () => _showImagePreviewDialog(item)
                                           : null,
                                       borderRadius: BorderRadius.circular(8),
@@ -1226,14 +1250,16 @@ class _MainDashboardState extends State<MainDashboard> {
                                           borderRadius: BorderRadius.circular(8),
                                           border: Border.all(color: Colors.white24),
                                         ),
-                                        child: item.imageData != null && item.imageData!.isNotEmpty
+                                        child: item.imageBytes != null
                                             ? ClipRRect(
                                                 borderRadius: BorderRadius.circular(7),
                                                 child: Image.memory(
-                                                  base64Decode(item.imageData!),
+                                                  item.imageBytes!,
+                                                  cacheWidth: 100,
                                                   width: 44,
                                                   height: 44,
                                                   fit: BoxFit.cover,
+                                                  filterQuality: FilterQuality.low,
                                                   errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white38, size: 20),
                                                 ),
                                               )
@@ -1305,6 +1331,7 @@ class _MainDashboardState extends State<MainDashboard> {
     }
 
     return GridView.builder(
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 300,
         mainAxisSpacing: 16,
@@ -1317,127 +1344,136 @@ class _MainDashboardState extends State<MainDashboard> {
   }
 
   Widget _buildMaterialCard(MaterialItem item) {
-    final hasImage = item.imageData != null && item.imageData!.isNotEmpty;
+    final bytes = item.imageBytes;
     final hasDesc = item.description != null && item.description!.trim().isNotEmpty;
-    return GlassContainer(
-      padding: const EdgeInsets.all(0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Image / Photo header
-          Stack(
-            children: [
-              InkWell(
-                onTap: hasImage ? () => _showImagePreviewDialog(item) : null,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
-                child: Container(
-                  height: 130,
-                  width: double.infinity,
-                  decoration: const BoxDecoration(
+    return RepaintBoundary(
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF1a2c35).withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.12), width: 1.2),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.25),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image / Photo header
+            Stack(
+              children: [
+                InkWell(
+                  onTap: bytes != null ? () => _showImagePreviewDialog(item) : null,
+                  child: Container(
+                    height: 130,
+                    width: double.infinity,
                     color: Colors.black26,
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
-                  ),
-                  child: hasImage
-                      ? ClipRRect(
-                          borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
-                          child: Image.memory(
-                            base64Decode(item.imageData!),
+                    child: bytes != null
+                        ? Image.memory(
+                            bytes,
+                            cacheWidth: 350,
                             fit: BoxFit.cover,
+                            filterQuality: FilterQuality.low,
                             errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 36)),
-                          ),
-                        )
-                      : const Center(child: Icon(Icons.inventory_2_outlined, color: Colors.white30, size: 44)),
-                ),
-              ),
-              Positioned(
-                top: 8,
-                right: 8,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0f2027).withOpacity(0.85),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.amberAccent.withOpacity(0.5)),
-                  ),
-                  child: Text(
-                    item.category,
-                    style: const TextStyle(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                          )
+                        : const Center(child: Icon(Icons.inventory_2_outlined, color: Colors.white30, size: 44)),
                   ),
                 ),
-              ),
-            ],
-          ),
-          // Details body
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.name,
-                    style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0f2027).withValues(alpha: 0.88),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.amberAccent.withValues(alpha: 0.5)),
+                    ),
+                    child: Text(
+                      item.category,
+                      style: const TextStyle(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
                   ),
-                  if (hasDesc) ...[
-                    const SizedBox(height: 4),
+                ),
+              ],
+            ),
+            // Details body
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      item.description!.trim(),
-                      style: const TextStyle(color: Colors.white60, fontSize: 12),
-                      maxLines: 2,
+                      item.name,
+                      style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                  ],
-                  const Spacer(),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.greenAccent.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          "Stock: ${item.quantity}",
-                          style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 13),
-                        ),
-                      ),
+                    if (hasDesc) ...[
+                      const SizedBox(height: 4),
                       Text(
-                        item.date,
-                        style: const TextStyle(color: Colors.white38, fontSize: 11),
+                        item.description!.trim(),
+                        style: const TextStyle(color: Colors.white60, fontSize: 12),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 8),
-                  const Divider(color: Colors.white12, height: 1),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit_outlined, color: Colors.blueAccent, size: 20),
-                        tooltip: "Edit Material",
-                        padding: const EdgeInsets.all(4),
-                        constraints: const BoxConstraints(),
-                        onPressed: () => _editInventoryItemDialog(item),
-                      ),
-                      const SizedBox(width: 10),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                        tooltip: "Delete Material",
-                        padding: const EdgeInsets.all(4),
-                        constraints: const BoxConstraints(),
-                        onPressed: () => _confirmDeleteDialog(item),
-                      ),
-                    ],
-                  ),
-                ],
+                    const Spacer(),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.greenAccent.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            "Stock: ${item.quantity}",
+                            style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                        ),
+                        Text(
+                          item.date,
+                          style: const TextStyle(color: Colors.white38, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Divider(color: Colors.white12, height: 1),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined, color: Colors.blueAccent, size: 20),
+                          tooltip: "Edit Material",
+                          padding: const EdgeInsets.all(4),
+                          constraints: const BoxConstraints(),
+                          onPressed: () => _editInventoryItemDialog(item),
+                        ),
+                        const SizedBox(width: 10),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                          tooltip: "Delete Material",
+                          padding: const EdgeInsets.all(4),
+                          constraints: const BoxConstraints(),
+                          onPressed: () => _confirmDeleteDialog(item),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1522,9 +1558,9 @@ class _MainDashboardState extends State<MainDashboard> {
                   margin: const EdgeInsets.only(bottom: 24),
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.05),
+                    color: Colors.white.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(15),
-                    border: Border.all(color: Colors.white.withOpacity(0.1)),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1554,7 +1590,7 @@ class _MainDashboardState extends State<MainDashboard> {
                             ),
                           ],
                         ),
-                      )).toList(),
+                      )),
                     ],
                   ),
                 );
@@ -1582,7 +1618,7 @@ class _SidebarItem extends StatelessWidget {
       onTap: onTap,
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: isActive ? Colors.white.withOpacity(0.15) : Colors.transparent, borderRadius: BorderRadius.circular(12)),
+        decoration: BoxDecoration(color: isActive ? Colors.white.withValues(alpha: 0.15) : Colors.transparent, borderRadius: BorderRadius.circular(12)),
         child: Row(children: [Icon(icon, color: isActive ? Colors.blueAccent : Colors.white54), const SizedBox(width: 16), Text(title, style: TextStyle(color: isActive ? Colors.white : Colors.white70, fontSize: 16, fontWeight: FontWeight.bold))]),
       ),
     );
@@ -1593,6 +1629,6 @@ class GlassContainer extends StatelessWidget {
   final Widget child; final EdgeInsetsGeometry? padding; final double? width; final BorderRadius? borderRadius;
   const GlassContainer({super.key, required this.child, this.padding, this.width, this.borderRadius});
   @override Widget build(BuildContext context) {
-    return SizedBox(width: width, child: ClipRRect(borderRadius: borderRadius ?? BorderRadius.circular(15), child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0), child: Container(padding: padding, decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: borderRadius ?? BorderRadius.circular(15), border: Border.all(color: Colors.white.withOpacity(0.1), width: 1.5)), child: child))));
+    return SizedBox(width: width, child: ClipRRect(borderRadius: borderRadius ?? BorderRadius.circular(15), child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0), child: Container(padding: padding, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: borderRadius ?? BorderRadius.circular(15), border: Border.all(color: Colors.white.withValues(alpha: 0.1), width: 1.5)), child: child))));
   }
 }
