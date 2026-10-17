@@ -39,6 +39,7 @@ void main() async {
   // Migrations for older database tables
   await dbPool.execute('ALTER TABLE borrowers ADD COLUMN IF NOT EXISTS inventory_id TEXT');
   await dbPool.execute('ALTER TABLE inventory ADD COLUMN IF NOT EXISTS image_data TEXT');
+  await dbPool.execute('ALTER TABLE inventory ADD COLUMN IF NOT EXISTS description TEXT');
 
   runApp(const WameedhApp());
 }
@@ -72,7 +73,8 @@ class MaterialItem {
   String category; 
   final String date;
   String? imageData;
-  MaterialItem(this.id, this.name, this.quantity, this.category, this.date, [this.imageData]);
+  String? description;
+  MaterialItem(this.id, this.name, this.quantity, this.category, this.date, [this.imageData, this.description]);
 }
 
 class BorrowerLog {
@@ -82,7 +84,7 @@ class BorrowerLog {
   final String phone;
   final String inventoryId;
   final String itemTaken;
-  final String topic;      
+  String topic;      
   int quantityTaken; 
   final String date;
   BorrowerLog(this.id, this.personName, this.email, this.phone, this.inventoryId, this.itemTaken, this.topic, this.quantityTaken, this.date);
@@ -112,9 +114,11 @@ class _MainDashboardState extends State<MainDashboard> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _borrowQtyController = TextEditingController(text: "1");
+  final TextEditingController _matDescController = TextEditingController();
   String? _selectedInventoryItemId;
   String? _selectedImageBase64;
   
+  bool _isCardView = false;
   bool _isLoading = true;
 
   Future<String?> _pickAndProcessImage() async {
@@ -214,6 +218,68 @@ class _MainDashboardState extends State<MainDashboard> {
     );
   }
 
+  Widget _buildQuantityStepper(TextEditingController controller, {int min = 1, String label = "Qty", double height = 56}) {
+    return StatefulBuilder(
+      builder: (context, setStepperState) {
+        return Container(
+          height: height,
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(
+            color: Colors.black26,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.white12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.remove, color: Colors.amberAccent, size: 18),
+                tooltip: "Decrease Quantity",
+                padding: const EdgeInsets.all(4),
+                constraints: const BoxConstraints(),
+                onPressed: () {
+                  int current = int.tryParse(controller.text) ?? min;
+                  if (current > min) {
+                    controller.text = (current - 1).toString();
+                    setStepperState(() {});
+                  }
+                },
+              ),
+              SizedBox(
+                width: 48,
+                child: TextField(
+                  controller: controller,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                    border: InputBorder.none,
+                    hintText: label,
+                    hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+                  ),
+                  onChanged: (_) => setStepperState(() {}),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.add, color: Colors.greenAccent, size: 18),
+                tooltip: "Increase Quantity",
+                padding: const EdgeInsets.all(4),
+                constraints: const BoxConstraints(),
+                onPressed: () {
+                  int current = int.tryParse(controller.text) ?? min;
+                  controller.text = (current + 1).toString();
+                  setStepperState(() {});
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -234,11 +300,12 @@ class _MainDashboardState extends State<MainDashboard> {
         }
       }
 
-      final invRes = await dbPool.execute('SELECT id, name, quantity, category, date, image_data FROM inventory ORDER BY date DESC');
+      final invRes = await dbPool.execute('SELECT id, name, quantity, category, date, image_data, description FROM inventory ORDER BY date DESC');
       _inventory.clear();
       for (final row in invRes) {
         final img = row[5] != null ? row[5] as String : null;
-        _inventory.add(MaterialItem(row[0] as String, row[1] as String, row[2] as int, row[3] as String, row[4] as String, img));
+        final desc = row[6] != null ? row[6] as String : null;
+        _inventory.add(MaterialItem(row[0] as String, row[1] as String, row[2] as int, row[3] as String, row[4] as String, img, desc));
       }
 
       final borRes = await dbPool.execute('SELECT id, person_name, email, phone, inventory_id, item_taken, topic, quantity_taken, date FROM borrowers ORDER BY date DESC');
@@ -263,6 +330,7 @@ class _MainDashboardState extends State<MainDashboard> {
   void dispose() {
     _matNameController.dispose();
     _matQtyController.dispose();
+    _matDescController.dispose();
     _personNameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
@@ -307,6 +375,123 @@ class _MainDashboardState extends State<MainDashboard> {
     );
   }
 
+  void _showEditCategoryDialog() {
+    if (_categories.isEmpty) return;
+    String targetCat = _selectedCategory ?? _categories.first;
+    final TextEditingController editCatController = TextEditingController(text: targetCat);
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF203a43),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: const [
+                  Icon(Icons.edit_note, color: Colors.amberAccent, size: 28),
+                  SizedBox(width: 10),
+                  Text("Edit Topic Name", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("Select Topic to Edit:", style: TextStyle(color: Colors.white70, fontSize: 13)),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(10)),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: targetCat,
+                        dropdownColor: const Color(0xFF203a43),
+                        isExpanded: true,
+                        items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(color: Colors.white)))).toList(),
+                        onChanged: (val) {
+                          if (val != null) {
+                            setDialogState(() {
+                              targetCat = val;
+                              editCatController.text = val;
+                            });
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text("Updated Topic Name:", style: TextStyle(color: Colors.white70, fontSize: 13)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: editCatController,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.black26,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                      hintText: "Enter updated topic name",
+                      hintStyle: const TextStyle(color: Colors.white38),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Cancel", style: TextStyle(color: Colors.white70)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.amberAccent),
+                  onPressed: () async {
+                    final newName = editCatController.text.trim();
+                    if (newName.isEmpty) return;
+                    if (newName == targetCat) {
+                      Navigator.pop(context);
+                      return;
+                    }
+                    if (_categories.contains(newName)) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Topic "$newName" already exists!'), backgroundColor: Colors.orange.shade800),
+                      );
+                      return;
+                    }
+
+                    // Update database tables
+                    await dbPool.execute('INSERT INTO categories (name) VALUES (\$1) ON CONFLICT DO NOTHING', parameters: [newName]);
+                    await dbPool.execute('UPDATE inventory SET category = \$1 WHERE category = \$2', parameters: [newName, targetCat]);
+                    await dbPool.execute('UPDATE borrowers SET topic = \$1 WHERE topic = \$2', parameters: [newName, targetCat]);
+                    await dbPool.execute('DELETE FROM categories WHERE name = \$1', parameters: [targetCat]);
+
+                    setState(() {
+                      final idx = _categories.indexOf(targetCat);
+                      if (idx != -1) _categories[idx] = newName;
+                      for (var item in _inventory) {
+                        if (item.category == targetCat) item.category = newName;
+                      }
+                      for (var b in _borrowers) {
+                        if (b.topic == targetCat) b.topic = newName;
+                      }
+                      if (_selectedCategory == targetCat) _selectedCategory = newName;
+                      if (_filterCategory == targetCat) _filterCategory = newName;
+                    });
+
+                    if (mounted) Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Topic renamed to "$newName" successfully!'), backgroundColor: Colors.green),
+                    );
+                  },
+                  child: const Text("Save Topic", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   void _addInventoryItem() async {
     final name = _matNameController.text.trim();
     if (name.isEmpty) return;
@@ -339,6 +524,7 @@ class _MainDashboardState extends State<MainDashboard> {
       return;
     }
     
+    final desc = _matDescController.text.trim();
     final newItemId = DateTime.now().millisecondsSinceEpoch.toString();
     final newItem = MaterialItem(
       newItemId,
@@ -347,14 +533,16 @@ class _MainDashboardState extends State<MainDashboard> {
       _selectedCategory ?? _categories.first,
       _getCurrentDate(),
       _selectedImageBase64,
+      desc.isNotEmpty ? desc : null,
     );
 
-    await dbPool.execute('INSERT INTO inventory (id, name, quantity, category, date, image_data) VALUES (\$1, \$2, \$3, \$4, \$5, \$6)', 
-      parameters: [newItem.id, newItem.name, newItem.quantity, newItem.category, newItem.date, newItem.imageData]);
+    await dbPool.execute('INSERT INTO inventory (id, name, quantity, category, date, image_data, description) VALUES (\$1, \$2, \$3, \$4, \$5, \$6, \$7)', 
+      parameters: [newItem.id, newItem.name, newItem.quantity, newItem.category, newItem.date, newItem.imageData, newItem.description]);
 
     setState(() {
       _inventory.insert(0, newItem);
       _matNameController.clear();
+      _matDescController.clear();
       _matQtyController.text = "1";
       _selectedImageBase64 = null;
       if (_selectedInventoryItemId == null) _selectedInventoryItemId = newItemId;
@@ -439,6 +627,7 @@ class _MainDashboardState extends State<MainDashboard> {
   void _editInventoryItemDialog(MaterialItem item) {
     final nameCtrl = TextEditingController(text: item.name);
     final qtyCtrl = TextEditingController(text: item.quantity.toString());
+    final descCtrl = TextEditingController(text: item.description ?? "");
     String selectedCat = item.category;
     if (!_categories.contains(selectedCat) && _categories.isNotEmpty) {
       selectedCat = _categories.first;
@@ -562,14 +751,20 @@ class _MainDashboardState extends State<MainDashboard> {
                     const SizedBox(height: 16),
                     const Text("Quantity in Stock", style: TextStyle(color: Colors.white70, fontSize: 13)),
                     const SizedBox(height: 6),
+                    _buildQuantityStepper(qtyCtrl, min: 0, label: "Stock", height: 50),
+                    const SizedBox(height: 16),
+                    const Text("Description (Optional)", style: TextStyle(color: Colors.white70, fontSize: 13)),
+                    const SizedBox(height: 6),
                     TextField(
-                      controller: qtyCtrl,
-                      keyboardType: TextInputType.number,
+                      controller: descCtrl,
+                      maxLines: 2,
                       style: const TextStyle(color: Colors.white),
                       decoration: InputDecoration(
                         filled: true,
                         fillColor: Colors.black26,
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                        hintText: "Optional details, storage location, notes...",
+                        hintStyle: const TextStyle(color: Colors.white38),
                       ),
                     ),
                   ],
@@ -605,7 +800,8 @@ class _MainDashboardState extends State<MainDashboard> {
                       return;
                     }
 
-                    await _updateInventoryItem(item.id, newName, newQty, selectedCat, currentImage);
+                    final newDesc = descCtrl.text.trim();
+                    await _updateInventoryItem(item.id, newName, newQty, selectedCat, currentImage, newDesc.isNotEmpty ? newDesc : null);
                     if (mounted) Navigator.pop(context);
                   },
                   child: const Text("Save Changes", style: TextStyle(color: Colors.white)),
@@ -618,10 +814,10 @@ class _MainDashboardState extends State<MainDashboard> {
     );
   }
 
-  Future<void> _updateInventoryItem(String id, String newName, int newQty, String newCategory, String? newImage) async {
+  Future<void> _updateInventoryItem(String id, String newName, int newQty, String newCategory, String? newImage, String? newDesc) async {
     await dbPool.execute(
-      'UPDATE inventory SET name = \$1, quantity = \$2, category = \$3, image_data = \$4 WHERE id = \$5',
-      parameters: [newName, newQty, newCategory, newImage, id],
+      'UPDATE inventory SET name = \$1, quantity = \$2, category = \$3, image_data = \$4, description = \$5 WHERE id = \$6',
+      parameters: [newName, newQty, newCategory, newImage, newDesc, id],
     );
     setState(() {
       final index = _inventory.indexWhere((m) => m.id == id);
@@ -630,6 +826,7 @@ class _MainDashboardState extends State<MainDashboard> {
         _inventory[index].quantity = newQty;
         _inventory[index].category = newCategory;
         _inventory[index].imageData = newImage;
+        _inventory[index].description = newDesc;
       }
     });
     if (mounted) {
@@ -690,31 +887,35 @@ class _MainDashboardState extends State<MainDashboard> {
       builder: (context) {
         return AlertDialog(
           backgroundColor: const Color(0xFF203a43),
-          title: Text("Return ${log.itemTaken}", style: const TextStyle(color: Colors.white)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text("Return ${log.itemTaken}", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text("Total borrowed: ${log.quantityTaken}", style: const TextStyle(color: Colors.white70)),
               const SizedBox(height: 16),
-              TextField(
-                controller: returnQtyCtrl,
-                keyboardType: TextInputType.number,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: "Quantity to Return", labelStyle: TextStyle(color: Colors.white54)),
-              ),
+              const Text("Quantity to Return:", style: TextStyle(color: Colors.white54, fontSize: 13)),
+              const SizedBox(height: 6),
+              _buildQuantityStepper(returnQtyCtrl, min: 1, label: "Return Qty", height: 50),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel", style: TextStyle(color: Colors.white70))),
             ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.amberAccent),
               onPressed: () async {
                 int returnQty = int.tryParse(returnQtyCtrl.text) ?? 0;
                 if (returnQty > 0 && returnQty <= log.quantityTaken) {
                   await _processReturn(log, returnQty);
                   if (mounted) Navigator.pop(context);
+                } else if (returnQty > log.quantityTaken) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text("Cannot return more than borrowed (${log.quantityTaken})!"), backgroundColor: Colors.redAccent),
+                  );
                 }
               },
-              child: const Text("Process Return"),
+              child: const Text("Process Return", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
             )
           ],
         );
@@ -794,225 +995,450 @@ class _MainDashboardState extends State<MainDashboard> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             const Text("📦 Electronics Inventory", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)),
-              child: Row(
-                children: [
-                  const Icon(Icons.filter_list, color: Colors.white54),
-                  const SizedBox(width: 10),
-                  DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: _filterCategory,
-                      dropdownColor: const Color(0xFF203a43),
-                      items: ["All", ..._categories].map((c) => DropdownMenuItem(value: c, child: Text(c == "All" ? "Show All Topics" : "Topic: $c", style: const TextStyle(color: Colors.white)))).toList(),
-                      onChanged: (val) => setState(() => _filterCategory = val!),
-                    ),
+            Row(
+              children: [
+                // Layout switcher (Table vs Card view)
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.table_rows_rounded),
+                        tooltip: "Table View",
+                        color: !_isCardView ? Colors.amberAccent : Colors.white54,
+                        onPressed: () {
+                          if (_isCardView) setState(() => _isCardView = false);
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.grid_view_rounded),
+                        tooltip: "Card View",
+                        color: _isCardView ? Colors.amberAccent : Colors.white54,
+                        onPressed: () {
+                          if (!_isCardView) setState(() => _isCardView = true);
+                        },
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.filter_list, color: Colors.white54),
+                      const SizedBox(width: 10),
+                      DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: _filterCategory,
+                          dropdownColor: const Color(0xFF203a43),
+                          items: ["All", ..._categories].map((c) => DropdownMenuItem(value: c, child: Text(c == "All" ? "Show All Topics" : "Topic: $c", style: const TextStyle(color: Colors.white)))).toList(),
+                          onChanged: (val) => setState(() => _filterCategory = val!),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ],
         ),
         const SizedBox(height: 24),
         GlassContainer(
-          padding: const EdgeInsets.all(24),
-          child: Row(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              InkWell(
-                onTap: () async {
-                  final img = await _pickAndProcessImage();
-                  if (img != null) {
-                    setState(() => _selectedImageBase64 = img);
-                  }
-                },
-                borderRadius: BorderRadius.circular(10),
-                child: Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    color: Colors.black26,
+              Row(
+                children: [
+                  InkWell(
+                    onTap: () async {
+                      final img = await _pickAndProcessImage();
+                      if (img != null) {
+                        setState(() => _selectedImageBase64 = img);
+                      }
+                    },
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: _selectedImageBase64 != null ? Colors.blueAccent : Colors.white24),
-                  ),
-                  child: _selectedImageBase64 != null
-                      ? Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(9),
-                              child: Image.memory(
-                                base64Decode(_selectedImageBase64!),
-                                width: 56,
-                                height: 56,
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                            Positioned(
-                              top: -4,
-                              right: -4,
-                              child: InkWell(
-                                onTap: () => setState(() => _selectedImageBase64 = null),
-                                child: Container(
-                                  padding: const EdgeInsets.all(3),
-                                  decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
-                                  child: const Icon(Icons.close, size: 12, color: Colors.white),
+                    child: Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: Colors.black26,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: _selectedImageBase64 != null ? Colors.blueAccent : Colors.white24),
+                      ),
+                      child: _selectedImageBase64 != null
+                          ? Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(9),
+                                  child: Image.memory(
+                                    base64Decode(_selectedImageBase64!),
+                                    width: 56,
+                                    height: 56,
+                                    fit: BoxFit.cover,
+                                  ),
                                 ),
+                                Positioned(
+                                  top: -4,
+                                  right: -4,
+                                  child: InkWell(
+                                    onTap: () => setState(() => _selectedImageBase64 = null),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(3),
+                                      decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
+                                      child: const Icon(Icons.close, size: 12, color: Colors.white),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: const [
+                                Icon(Icons.add_a_photo_outlined, color: Colors.blueAccent, size: 22),
+                                SizedBox(height: 2),
+                                Text("Photo", style: TextStyle(color: Colors.white54, fontSize: 10)),
+                              ],
+                            ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(flex: 3, child: _buildTextField(_matNameController, "Material Name (e.g. ESP32)")),
+                  const SizedBox(width: 12),
+                  _buildQuantityStepper(_matQtyController, min: 1, label: "Qty", height: 56),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 3,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            height: 56,
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            alignment: Alignment.centerLeft,
+                            decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(10)),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: _selectedCategory,
+                                dropdownColor: const Color(0xFF203a43),
+                                isExpanded: true,
+                                items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(color: Colors.white)))).toList(),
+                                onChanged: (val) => setState(() => _selectedCategory = val),
                               ),
                             ),
-                          ],
-                        )
-                      : Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: const [
-                            Icon(Icons.add_a_photo_outlined, color: Colors.blueAccent, size: 22),
-                            SizedBox(height: 2),
-                            Text("Photo", style: TextStyle(color: Colors.white54, fontSize: 10)),
-                          ],
-                        ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(flex: 3, child: _buildTextField(_matNameController, "Material Name (e.g. ESP32)")),
-              const SizedBox(width: 12),
-              Expanded(flex: 1, child: _buildTextField(_matQtyController, "Qty", isNumber: true)),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 3,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(10)),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: _selectedCategory,
-                            dropdownColor: const Color(0xFF203a43),
-                            isExpanded: true,
-                            items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(color: Colors.white)))).toList(),
-                            onChanged: (val) => setState(() => _selectedCategory = val),
                           ),
                         ),
-                      ),
+                        const SizedBox(width: 6),
+                        IconButton(
+                          icon: const Icon(Icons.edit_note, color: Colors.amberAccent, size: 30),
+                          tooltip: "Edit Topic Name",
+                          onPressed: _showEditCategoryDialog,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add_circle, color: Colors.amberAccent, size: 32),
+                          tooltip: "Add New Topic",
+                          onPressed: _showAddCategoryDialog,
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    IconButton(icon: const Icon(Icons.add_circle, color: Colors.amberAccent, size: 36), onPressed: _showAddCategoryDialog),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton.icon(
+                    onPressed: _addInventoryItem,
+                    icon: const Icon(Icons.add, color: Colors.white),
+                    label: const Text("Add", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 19)),
+                  )
+                ],
               ),
-              const SizedBox(width: 12),
-              ElevatedButton.icon(
-                onPressed: _addInventoryItem, icon: const Icon(Icons.add, color: Colors.white), label: const Text("Add", style: TextStyle(color: Colors.white)),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, padding: const EdgeInsets.all(20)),
-              )
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildTextField(_matDescController, "Description (Optional - e.g. Pinout notes, storage bin, specs)"),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
         const SizedBox(height: 24),
         Expanded(
-          child: GlassContainer(
-            padding: const EdgeInsets.all(0),
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.2)))),
-                  child: Row(
-                    children: const [
-                      Expanded(flex: 3, child: Text("Material Name", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white))),
-                      Expanded(flex: 2, child: Text("Topic", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.amberAccent))),
-                      Expanded(flex: 1, child: Text("Qty in Stock", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.greenAccent))),
-                      Expanded(flex: 2, child: Text("Date", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white))),
-                      SizedBox(width: 96), 
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: filteredInventory.isEmpty ? const Center(child: Text("No items found.", style: TextStyle(color: Colors.white54, fontSize: 18)))
-                    : ListView.builder(
-                        itemCount: filteredInventory.length,
-                        itemBuilder: (context, index) {
-                          final item = filteredInventory[index];
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.05)))),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  flex: 3,
-                                  child: Row(
-                                    children: [
-                                      Tooltip(
-                                        message: item.imageData != null && item.imageData!.isNotEmpty ? "Click to view full photo" : "No photo",
-                                        child: InkWell(
-                                          onTap: item.imageData != null && item.imageData!.isNotEmpty
-                                              ? () => _showImagePreviewDialog(item)
-                                              : null,
-                                          borderRadius: BorderRadius.circular(8),
-                                          child: Container(
-                                            width: 44,
-                                            height: 44,
-                                            decoration: BoxDecoration(
-                                              color: Colors.white10,
-                                              borderRadius: BorderRadius.circular(8),
-                                              border: Border.all(color: Colors.white24),
-                                            ),
-                                            child: item.imageData != null && item.imageData!.isNotEmpty
-                                                ? ClipRRect(
-                                                    borderRadius: BorderRadius.circular(7),
-                                                    child: Image.memory(
-                                                      base64Decode(item.imageData!),
-                                                      width: 44,
-                                                      height: 44,
-                                                      fit: BoxFit.cover,
-                                                      errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white38, size: 20),
-                                                    ),
-                                                  )
-                                                : const Icon(Icons.inventory_2_outlined, color: Colors.white30, size: 22),
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          item.name,
-                                          style: const TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.w500),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Expanded(flex: 2, child: Align(alignment: Alignment.centerLeft, child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)), child: Text(item.category, style: const TextStyle(color: Colors.amberAccent, fontSize: 14))))),
-                                Expanded(flex: 1, child: Text("${item.quantity}", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.greenAccent))),
-                                Expanded(flex: 2, child: Text(item.date, style: const TextStyle(color: Colors.white70, fontSize: 14))),
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      tooltip: "Edit Material",
-                                      icon: const Icon(Icons.edit_outlined, color: Colors.blueAccent),
-                                      onPressed: () => _editInventoryItemDialog(item),
-                                    ),
-                                    IconButton(
-                                      tooltip: "Delete Material",
-                                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                                      onPressed: () => _confirmDeleteDialog(item),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                ),
+          child: _isCardView
+              ? _buildInventoryCardsView(filteredInventory)
+              : _buildInventoryTableView(filteredInventory),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInventoryTableView(List<MaterialItem> items) {
+    return GlassContainer(
+      padding: const EdgeInsets.all(0),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.2)))),
+            child: Row(
+              children: const [
+                Expanded(flex: 3, child: Text("Material Name", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white))),
+                Expanded(flex: 2, child: Text("Topic", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.amberAccent))),
+                Expanded(flex: 1, child: Text("Qty in Stock", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.greenAccent))),
+                Expanded(flex: 2, child: Text("Date", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white))),
+                SizedBox(width: 96), 
               ],
             ),
           ),
-        ),
-      ],
+          Expanded(
+            child: items.isEmpty
+                ? const Center(child: Text("No items found.", style: TextStyle(color: Colors.white54, fontSize: 18)))
+                : ListView.builder(
+                    itemCount: items.length,
+                    itemBuilder: (context, index) {
+                      final item = items[index];
+                      final hasDesc = item.description != null && item.description!.trim().isNotEmpty;
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.05)))),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              flex: 3,
+                              child: Row(
+                                children: [
+                                  Tooltip(
+                                    message: item.imageData != null && item.imageData!.isNotEmpty ? "Click to view full photo" : "No photo",
+                                    child: InkWell(
+                                      onTap: item.imageData != null && item.imageData!.isNotEmpty
+                                          ? () => _showImagePreviewDialog(item)
+                                          : null,
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Container(
+                                        width: 44,
+                                        height: 44,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white10,
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: Colors.white24),
+                                        ),
+                                        child: item.imageData != null && item.imageData!.isNotEmpty
+                                            ? ClipRRect(
+                                                borderRadius: BorderRadius.circular(7),
+                                                child: Image.memory(
+                                                  base64Decode(item.imageData!),
+                                                  width: 44,
+                                                  height: 44,
+                                                  fit: BoxFit.cover,
+                                                  errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white38, size: 20),
+                                                ),
+                                              )
+                                            : const Icon(Icons.inventory_2_outlined, color: Colors.white30, size: 22),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Text(
+                                          item.name,
+                                          style: const TextStyle(fontSize: 17, color: Colors.white, fontWeight: FontWeight.w600),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        if (hasDesc) ...[
+                                          const SizedBox(height: 3),
+                                          Text(
+                                            item.description!.trim(),
+                                            style: const TextStyle(fontSize: 12, color: Colors.white60),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Expanded(flex: 2, child: Align(alignment: Alignment.centerLeft, child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)), child: Text(item.category, style: const TextStyle(color: Colors.amberAccent, fontSize: 14))))),
+                            Expanded(flex: 1, child: Text("${item.quantity}", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.greenAccent))),
+                            Expanded(flex: 2, child: Text(item.date, style: const TextStyle(color: Colors.white70, fontSize: 14))),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  tooltip: "Edit Material",
+                                  icon: const Icon(Icons.edit_outlined, color: Colors.blueAccent),
+                                  onPressed: () => _editInventoryItemDialog(item),
+                                ),
+                                IconButton(
+                                  tooltip: "Delete Material",
+                                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                  onPressed: () => _confirmDeleteDialog(item),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInventoryCardsView(List<MaterialItem> items) {
+    if (items.isEmpty) {
+      return GlassContainer(
+        padding: const EdgeInsets.all(0),
+        child: const Center(child: Text("No items found.", style: TextStyle(color: Colors.white54, fontSize: 18))),
+      );
+    }
+
+    return GridView.builder(
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 300,
+        mainAxisSpacing: 16,
+        crossAxisSpacing: 16,
+        childAspectRatio: 0.78,
+      ),
+      itemCount: items.length,
+      itemBuilder: (context, index) => _buildMaterialCard(items[index]),
+    );
+  }
+
+  Widget _buildMaterialCard(MaterialItem item) {
+    final hasImage = item.imageData != null && item.imageData!.isNotEmpty;
+    final hasDesc = item.description != null && item.description!.trim().isNotEmpty;
+    return GlassContainer(
+      padding: const EdgeInsets.all(0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Image / Photo header
+          Stack(
+            children: [
+              InkWell(
+                onTap: hasImage ? () => _showImagePreviewDialog(item) : null,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
+                child: Container(
+                  height: 130,
+                  width: double.infinity,
+                  decoration: const BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
+                  ),
+                  child: hasImage
+                      ? ClipRRect(
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
+                          child: Image.memory(
+                            base64Decode(item.imageData!),
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 36)),
+                          ),
+                        )
+                      : const Center(child: Icon(Icons.inventory_2_outlined, color: Colors.white30, size: 44)),
+                ),
+              ),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0f2027).withOpacity(0.85),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.amberAccent.withOpacity(0.5)),
+                  ),
+                  child: Text(
+                    item.category,
+                    style: const TextStyle(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          // Details body
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.name,
+                    style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (hasDesc) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      item.description!.trim(),
+                      style: const TextStyle(color: Colors.white60, fontSize: 12),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  const Spacer(),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.greenAccent.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          "Stock: ${item.quantity}",
+                          style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                      ),
+                      Text(
+                        item.date,
+                        style: const TextStyle(color: Colors.white38, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Divider(color: Colors.white12, height: 1),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit_outlined, color: Colors.blueAccent, size: 20),
+                        tooltip: "Edit Material",
+                        padding: const EdgeInsets.all(4),
+                        constraints: const BoxConstraints(),
+                        onPressed: () => _editInventoryItemDialog(item),
+                      ),
+                      const SizedBox(width: 10),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                        tooltip: "Delete Material",
+                        padding: const EdgeInsets.all(4),
+                        constraints: const BoxConstraints(),
+                        onPressed: () => _confirmDeleteDialog(item),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1068,7 +1494,7 @@ class _MainDashboardState extends State<MainDashboard> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Expanded(flex: 1, child: _buildTextField(_borrowQtyController, "Qty Taken", isNumber: true)),
+                  _buildQuantityStepper(_borrowQtyController, min: 1, label: "Qty", height: 56),
                   const SizedBox(width: 12),
                   ElevatedButton.icon(
                     onPressed: _inventory.isEmpty ? null : _addBorrowerLog, icon: const Icon(Icons.assignment_ind, color: Colors.white), label: const Text("Checkout", style: TextStyle(color: Colors.white)),
