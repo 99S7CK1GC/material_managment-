@@ -138,8 +138,13 @@ class _MainDashboardState extends State<MainDashboard> {
   final TextEditingController _matDescController = TextEditingController();
   final TextEditingController _searchNameController = TextEditingController();
   final TextEditingController _searchTopicController = TextEditingController();
+  final TextEditingController _borrowTopicController = TextEditingController();
+  final TextEditingController _borrowMaterialController = TextEditingController();
+  final TextEditingController _borrowHistorySearchController = TextEditingController();
   String _searchName = "";
   String _searchTopic = "";
+  String _borrowTopicFilter = "All";
+  String _borrowHistorySearch = "";
   String? _selectedInventoryItemId;
   String? _selectedImageBase64;
   
@@ -345,7 +350,10 @@ class _MainDashboardState extends State<MainDashboard> {
 
       setState(() {
         if (_categories.isNotEmpty) _selectedCategory = _categories.first;
-        if (_inventory.isNotEmpty) _selectedInventoryItemId = _inventory.first.id;
+        if (_inventory.isNotEmpty) {
+          _selectedInventoryItemId = _inventory.first.id;
+          _borrowMaterialController.text = _inventory.first.name;
+        }
         _isLoading = false;
       });
     } catch (e) {
@@ -364,6 +372,9 @@ class _MainDashboardState extends State<MainDashboard> {
     _borrowQtyController.dispose();
     _searchNameController.dispose();
     _searchTopicController.dispose();
+    _borrowTopicController.dispose();
+    _borrowMaterialController.dispose();
+    _borrowHistorySearchController.dispose();
     super.dispose();
   }
 
@@ -507,6 +518,10 @@ class _MainDashboardState extends State<MainDashboard> {
                       if (_searchTopic == targetCat) {
                         _searchTopic = newName;
                         _searchTopicController.text = newName;
+                      }
+                      if (_borrowTopicFilter == targetCat) {
+                        _borrowTopicFilter = newName;
+                        _borrowTopicController.text = newName;
                       }
                     });
 
@@ -869,8 +884,54 @@ class _MainDashboardState extends State<MainDashboard> {
     }
   }
 
+  List<MaterialItem> _getFilteredBorrowMaterials() {
+    if (_borrowTopicFilter.isEmpty || _borrowTopicFilter == "All") {
+      return _inventory;
+    }
+    final cleanTopic = _borrowTopicFilter.toLowerCase();
+    return _inventory.where((m) => m.category.toLowerCase().contains(cleanTopic)).toList();
+  }
+
+  void _syncSelectedMaterialOnTopicChange() {
+    final available = _getFilteredBorrowMaterials();
+    if (_selectedInventoryItemId == null || !available.any((m) => m.id == _selectedInventoryItemId)) {
+      if (available.isNotEmpty) {
+        _selectedInventoryItemId = available.first.id;
+        _borrowMaterialController.text = available.first.name;
+      } else {
+        _selectedInventoryItemId = null;
+        _borrowMaterialController.clear();
+      }
+    }
+  }
+
   void _addBorrowerLog() async {
-    if (_personNameController.text.trim().isEmpty || _selectedInventoryItemId == null) return;
+    if (_personNameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please enter the borrower's name"), backgroundColor: Colors.orangeAccent),
+      );
+      return;
+    }
+
+    // Resolve selected material if null or invalid
+    if (_selectedInventoryItemId == null || !_inventory.any((m) => m.id == _selectedInventoryItemId)) {
+      final typedName = _borrowMaterialController.text.trim().toLowerCase();
+      final exactMatch = _inventory.where((m) => m.name.toLowerCase() == typedName).toList();
+      if (exactMatch.isNotEmpty) {
+        _selectedInventoryItemId = exactMatch.first.id;
+      } else {
+        final partialMatch = _inventory.where((m) => m.name.toLowerCase().contains(typedName)).toList();
+        if (partialMatch.length == 1) {
+          _selectedInventoryItemId = partialMatch.first.id;
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Please select a material to checkout"), backgroundColor: Colors.orangeAccent),
+          );
+          return;
+        }
+      }
+    }
+
     final int qtyTaken = int.tryParse(_borrowQtyController.text) ?? 1;
 
     final invIndex = _inventory.indexWhere((m) => m.id == _selectedInventoryItemId);
@@ -878,7 +939,7 @@ class _MainDashboardState extends State<MainDashboard> {
       final item = _inventory[invIndex];
       if (item.quantity < qtyTaken) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: Cannot checkout ${qtyTaken}. Only ${item.quantity} in stock!"), backgroundColor: Colors.redAccent)
+          SnackBar(content: Text("Error: Cannot checkout $qtyTaken. Only ${item.quantity} in stock!"), backgroundColor: Colors.redAccent)
         );
         return;
       }
@@ -909,7 +970,9 @@ class _MainDashboardState extends State<MainDashboard> {
         // Only clear qty, keep user info for multiple borrow actions!
         _borrowQtyController.text = "1";
       });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Checkout successful!"), backgroundColor: Colors.green));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Checkout successful!"), backgroundColor: Colors.green));
+      }
     }
   }
 
@@ -1791,13 +1854,35 @@ class _MainDashboardState extends State<MainDashboard> {
   }
 
   Widget _buildBorrowersView() {
-    if (_selectedInventoryItemId != null && !_inventory.any((m) => m.id == _selectedInventoryItemId)) {
-      _selectedInventoryItemId = _inventory.isNotEmpty ? _inventory.first.id : null;
+    final availableMaterials = _getFilteredBorrowMaterials();
+    if (_selectedInventoryItemId != null && !availableMaterials.any((m) => m.id == _selectedInventoryItemId)) {
+      _selectedInventoryItemId = availableMaterials.isNotEmpty ? availableMaterials.first.id : null;
+      _borrowMaterialController.text = availableMaterials.isNotEmpty ? availableMaterials.first.name : "";
+    }
+
+    MaterialItem? currentSelectedItem;
+    if (_selectedInventoryItemId != null) {
+      try {
+        currentSelectedItem = _inventory.firstWhere((m) => m.id == _selectedInventoryItemId);
+      } catch (_) {
+        currentSelectedItem = null;
+      }
     }
     
+    // Filter borrower records
+    final filteredBorrowers = _borrowers.where((log) {
+      if (_borrowHistorySearch.isEmpty) return true;
+      final q = _borrowHistorySearch.toLowerCase();
+      return log.personName.toLowerCase().contains(q) ||
+          log.phone.toLowerCase().contains(q) ||
+          log.email.toLowerCase().contains(q) ||
+          log.itemTaken.toLowerCase().contains(q) ||
+          log.topic.toLowerCase().contains(q);
+    }).toList();
+
     // Group borrowers by name + phone
     Map<String, List<BorrowerLog>> groupedLogs = {};
-    for (var log in _borrowers) {
+    for (var log in filteredBorrowers) {
       String key = "${log.personName}|${log.phone}|${log.email}";
       if (!groupedLogs.containsKey(key)) groupedLogs[key] = [];
       groupedLogs[key]!.add(log);
@@ -1821,39 +1906,341 @@ class _MainDashboardState extends State<MainDashboard> {
                   Expanded(flex: 2, child: _buildTextField(_emailController, "Email Address")),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
+                  // 1. Topic Filter / Search Combo
                   Expanded(
                     flex: 3,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(10)),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          hint: const Text("Select Material...", style: TextStyle(color: Colors.white54)),
-                          value: _selectedInventoryItemId,
-                          dropdownColor: const Color(0xFF203a43),
-                          isExpanded: true,
-                          items: _inventory.map((m) => DropdownMenuItem(value: m.id, child: Text("${m.name} (In Stock: ${m.quantity})", style: const TextStyle(color: Colors.white)))).toList(),
-                          onChanged: (val) => setState(() => _selectedInventoryItemId = val),
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: Colors.black26,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: (_borrowTopicFilter.isNotEmpty && _borrowTopicFilter != "All")
+                              ? Colors.amberAccent
+                              : Colors.transparent,
                         ),
+                      ),
+                      child: TextField(
+                        controller: _borrowTopicController,
+                        style: const TextStyle(color: Colors.white, fontSize: 14),
+                        decoration: InputDecoration(
+                          prefixIcon: const Icon(Icons.category_outlined, color: Colors.amberAccent, size: 20),
+                          hintText: "Search topic...",
+                          hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 16),
+                          suffixIcon: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (_borrowTopicController.text.isNotEmpty || _borrowTopicFilter != "All")
+                                IconButton(
+                                  icon: const Icon(Icons.clear, color: Colors.white54, size: 18),
+                                  tooltip: "Reset Topic Filter",
+                                  onPressed: () {
+                                    setState(() {
+                                      _borrowTopicController.clear();
+                                      _borrowTopicFilter = "All";
+                                      _syncSelectedMaterialOnTopicChange();
+                                    });
+                                  },
+                                ),
+                              PopupMenuButton<String>(
+                                icon: const Icon(Icons.arrow_drop_down, color: Colors.white70),
+                                tooltip: "Choose Topic from List",
+                                color: const Color(0xFF203a43),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                onSelected: (val) {
+                                  setState(() {
+                                    if (val == "All") {
+                                      _borrowTopicController.clear();
+                                      _borrowTopicFilter = "All";
+                                    } else {
+                                      _borrowTopicController.text = val;
+                                      _borrowTopicFilter = val;
+                                    }
+                                    _syncSelectedMaterialOnTopicChange();
+                                  });
+                                },
+                                itemBuilder: (context) {
+                                  final topics = ["All", ..._categories];
+                                  return topics.map((t) => PopupMenuItem(
+                                    value: t,
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          t == "All" ? Icons.apps : Icons.folder_outlined,
+                                          size: 18,
+                                          color: t == _borrowTopicFilter ? Colors.amberAccent : Colors.white70,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Text(
+                                          t == "All" ? "All Topics" : t,
+                                          style: TextStyle(
+                                            color: t == _borrowTopicFilter ? Colors.amberAccent : Colors.white,
+                                            fontWeight: t == _borrowTopicFilter ? FontWeight.bold : FontWeight.normal,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  )).toList();
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        onChanged: (val) {
+                          setState(() {
+                            _borrowTopicFilter = val.trim().isEmpty ? "All" : val.trim();
+                            _syncSelectedMaterialOnTopicChange();
+                          });
+                        },
                       ),
                     ),
                   ),
                   const SizedBox(width: 12),
+                  // 2. Searchable Material Selector / Autocomplete
+                  Expanded(
+                    flex: 4,
+                    child: DropdownMenu<String>(
+                      key: ValueKey("borrow_mat_${_borrowTopicFilter}_${_inventory.length}_$_selectedInventoryItemId"),
+                      controller: _borrowMaterialController,
+                      initialSelection: _selectedInventoryItemId,
+                      expandedInsets: EdgeInsets.zero,
+                      enableFilter: true,
+                      enableSearch: true,
+                      requestFocusOnTap: true,
+                      menuHeight: 350,
+                      hintText: "Search material by name...",
+                      leadingIcon: const Icon(Icons.search, color: Colors.blueAccent, size: 20),
+                      trailingIcon: const Icon(Icons.arrow_drop_down, color: Colors.white70),
+                      selectedTrailingIcon: const Icon(Icons.arrow_drop_up, color: Colors.amberAccent),
+                      textStyle: const TextStyle(color: Colors.white, fontSize: 14),
+                      inputDecorationTheme: InputDecorationTheme(
+                        filled: true,
+                        fillColor: Colors.black26,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Colors.blueAccent, width: 1.5)),
+                        hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+                      ),
+                      menuStyle: MenuStyle(
+                        backgroundColor: const WidgetStatePropertyAll(Color(0xFF203a43)),
+                        elevation: const WidgetStatePropertyAll(12),
+                        shape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Colors.white12))),
+                      ),
+                      filterCallback: (List<DropdownMenuEntry<String>> entries, String filter) {
+                        final q = filter.trim().toLowerCase();
+                        if (q.isEmpty) return entries;
+                        return entries.where((e) {
+                          final item = _inventory.firstWhere((inv) => inv.id == e.value, orElse: () => MaterialItem("", "", 0, "", ""));
+                          return item.name.toLowerCase().contains(q) || item.category.toLowerCase().contains(q);
+                        }).toList();
+                      },
+                      dropdownMenuEntries: availableMaterials.isEmpty
+                          ? [
+                              const DropdownMenuEntry<String>(
+                                value: "",
+                                label: "No materials available",
+                                enabled: false,
+                              )
+                            ]
+                          : availableMaterials.map((m) {
+                              return DropdownMenuEntry<String>(
+                                value: m.id,
+                                label: m.name,
+                                labelWidget: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 4),
+                                  child: Row(
+                                    children: [
+                                      if (m.imageBytes != null)
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(6),
+                                          child: Image.memory(
+                                            m.imageBytes!,
+                                            width: 34,
+                                            height: 34,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, _) => Container(
+                                              width: 34,
+                                              height: 34,
+                                              decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(6)),
+                                              child: const Icon(Icons.hardware, size: 18, color: Colors.white54),
+                                            ),
+                                          ),
+                                        )
+                                      else
+                                        Container(
+                                          width: 34,
+                                          height: 34,
+                                          decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(6)),
+                                          child: const Icon(Icons.hardware, size: 18, color: Colors.white54),
+                                        ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              m.name,
+                                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              m.category,
+                                              style: const TextStyle(color: Colors.amberAccent, fontSize: 11),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: m.quantity > 0 ? Colors.green.withValues(alpha: 0.2) : Colors.red.withValues(alpha: 0.2),
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(
+                                            color: m.quantity > 0 ? Colors.greenAccent : Colors.redAccent,
+                                            width: 1,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          m.quantity > 0 ? "Stock: ${m.quantity}" : "Out of stock",
+                                          style: TextStyle(
+                                            color: m.quantity > 0 ? Colors.greenAccent : Colors.redAccent,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                      onSelected: (val) {
+                        setState(() {
+                          _selectedInventoryItemId = (val != null && val.isNotEmpty) ? val : null;
+                          if (_selectedInventoryItemId != null) {
+                            final sel = _inventory.firstWhere((m) => m.id == _selectedInventoryItemId, orElse: () => _inventory.first);
+                            _borrowMaterialController.text = sel.name;
+                          }
+                        });
+                      },
+                    ),
+                  ),
+                  if (currentSelectedItem != null) ...[
+                    const SizedBox(width: 10),
+                    Container(
+                      height: 56,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: currentSelectedItem.quantity > 0 ? Colors.green.withValues(alpha: 0.15) : Colors.red.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: currentSelectedItem.quantity > 0 ? Colors.greenAccent.withValues(alpha: 0.5) : Colors.redAccent.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text("Available", style: TextStyle(color: Colors.white54, fontSize: 10)),
+                          Text(
+                            "${currentSelectedItem.quantity}",
+                            style: TextStyle(
+                              color: currentSelectedItem.quantity > 0 ? Colors.greenAccent : Colors.redAccent,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(width: 12),
                   _buildQuantityStepper(_borrowQtyController, min: 1, label: "Qty", height: 56),
                   const SizedBox(width: 12),
                   ElevatedButton.icon(
-                    onPressed: _inventory.isEmpty ? null : _addBorrowerLog, icon: const Icon(Icons.assignment_ind, color: Colors.white), label: const Text("Checkout", style: TextStyle(color: Colors.white)),
-                    style: ElevatedButton.styleFrom(backgroundColor: _inventory.isEmpty ? Colors.grey : Colors.green, padding: const EdgeInsets.all(20)),
-                  )
+                    onPressed: _inventory.isEmpty ? null : _addBorrowerLog,
+                    icon: const Icon(Icons.assignment_ind, color: Colors.white),
+                    label: const Text("Checkout", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _inventory.isEmpty ? Colors.grey : Colors.green,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
                 ],
               ),
             ],
           ),
         ),
         const SizedBox(height: 24),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                const Text("📋 Borrowers Records", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+                const SizedBox(width: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(color: Colors.blueAccent.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.blueAccent)),
+                  child: Text("${filteredBorrowers.length} checkouts", style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+                ),
+              ],
+            ),
+            SizedBox(
+              width: 360,
+              height: 42,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _borrowHistorySearch.isNotEmpty ? Colors.amberAccent : Colors.white12),
+                ),
+                child: TextField(
+                  controller: _borrowHistorySearchController,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.search, color: Colors.amberAccent, size: 18),
+                    hintText: "Search records by person, item, topic...",
+                    hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                    suffixIcon: _borrowHistorySearch.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, color: Colors.white54, size: 16),
+                            onPressed: () {
+                              setState(() {
+                                _borrowHistorySearchController.clear();
+                                _borrowHistorySearch = "";
+                              });
+                            },
+                          )
+                        : null,
+                  ),
+                  onChanged: (val) {
+                    setState(() {
+                      _borrowHistorySearch = val.trim();
+                    });
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
         Expanded(
           child: GlassContainer(
             padding: const EdgeInsets.all(0),
