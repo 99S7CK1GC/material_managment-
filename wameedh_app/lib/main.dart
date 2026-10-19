@@ -174,77 +174,393 @@ class _MainDashboardState extends State<MainDashboard> {
     }
   }
 
-  void _showImagePreviewDialog(MaterialItem item) {
-    if (item.imageData == null || item.imageData!.isEmpty) return;
+  Future<void> _saveMaterialPhoto(MaterialItem item) async {
+    if (item.imageBytes == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("No photo available to save"), backgroundColor: Colors.orangeAccent),
+        );
+      }
+      return;
+    }
+    try {
+      final cleanName = item.name.replaceAll(RegExp(r'[^\w\s-]'), '_').replaceAll(' ', '_');
+      final uri = await FilePicker.saveFile(
+        dialogTitle: 'Save Material Photo',
+        fileName: '$cleanName.png',
+        bytes: item.imageBytes!,
+        type: FileType.custom,
+        allowedExtensions: ['png', 'jpg', 'jpeg'],
+      );
+      if (uri != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Photo saved successfully!"), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      debugPrint("Error saving photo: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error saving photo: $e"), backgroundColor: Colors.redAccent),
+        );
+      }
+    }
+  }
+
+  Future<void> _changeMaterialPhoto(MaterialItem item, StateSetter setDialogState) async {
+    final newBase64 = await _pickAndProcessImage();
+    if (newBase64 == null) return;
+
+    try {
+      await dbPool.execute('UPDATE inventory SET image_data = \$1 WHERE id = \$2', parameters: [newBase64, item.id]);
+
+      setState(() {
+        final idx = _inventory.indexWhere((m) => m.id == item.id);
+        if (idx != -1) {
+          _inventory[idx].imageData = newBase64;
+        }
+        item.imageData = newBase64;
+      });
+
+      setDialogState(() {});
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Photo updated successfully!"), backgroundColor: Colors.blueAccent),
+        );
+      }
+    } catch (e) {
+      debugPrint("Error updating photo: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error updating photo: $e"), backgroundColor: Colors.redAccent),
+        );
+      }
+    }
+  }
+
+  void _showMaterialDetailsDialog(MaterialItem item) {
     showDialog(
       context: context,
-      builder: (context) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.all(24),
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 500),
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: const Color(0xFF203a43),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white24),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.5),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        item.name,
-                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white70),
-                      onPressed: () => Navigator.pop(context),
+      barrierColor: Colors.black.withValues(alpha: 0.65),
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final int borrowedCount = _borrowers
+                .where((b) => b.inventoryId == item.id || b.itemTaken.toLowerCase() == item.name.toLowerCase())
+                .fold(0, (sum, b) => sum + b.quantityTaken);
+
+            final bool hasImage = item.imageBytes != null;
+            final bool hasDesc = item.description != null && item.description!.trim().isNotEmpty;
+
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 480),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E3545),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.12), width: 1.2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.5),
+                      blurRadius: 25,
+                      offset: const Offset(0, 10),
                     ),
                   ],
                 ),
-                const SizedBox(height: 14),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: item.imageBytes != null
-                      ? Image.memory(
-                          item.imageBytes!,
-                          fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 80, color: Colors.white38),
-                        )
-                      : const Icon(Icons.broken_image, size: 80, color: Colors.white38),
+                child: Stack(
+                  children: [
+                    SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      padding: const EdgeInsets.all(22.0),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // 1. Photo Container with Options Menu
+                          PopupMenuButton<String>(
+                            tooltip: "Photo Options",
+                            color: const Color(0xFF182A34),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: const BorderSide(color: Colors.white24, width: 1),
+                            ),
+                            offset: const Offset(120, 20),
+                            onSelected: (action) {
+                              if (action == 'save') {
+                                _saveMaterialPhoto(item);
+                              } else if (action == 'change') {
+                                _changeMaterialPhoto(item, setDialogState);
+                              }
+                            },
+                            itemBuilder: (menuContext) => [
+                              if (hasImage) ...[
+                                const PopupMenuItem(
+                                  value: 'save',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.file_download_outlined, color: Colors.tealAccent, size: 20),
+                                      SizedBox(width: 10),
+                                      Text("Save photo", style: TextStyle(color: Colors.white, fontSize: 14)),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuDivider(height: 1),
+                              ],
+                              PopupMenuItem(
+                                value: 'change',
+                                child: Row(
+                                  children: [
+                                    Icon(hasImage ? Icons.photo_library_outlined : Icons.add_photo_alternate_outlined, color: Colors.blueAccent, size: 20),
+                                    const SizedBox(width: 10),
+                                    Text(hasImage ? "Change photo" : "Upload photo", style: const TextStyle(color: Colors.white, fontSize: 14)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            child: Container(
+                              height: 230,
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF152631),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                              ),
+                              child: Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  // The Photo or Placeholder
+                                  if (hasImage)
+                                    Padding(
+                                      padding: const EdgeInsets.all(12.0),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Image.memory(
+                                          item.imageBytes!,
+                                          fit: BoxFit.contain,
+                                          errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, size: 60, color: Colors.white38),
+                                        ),
+                                      ),
+                                    )
+                                  else
+                                    const Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.inventory_2_outlined, size: 56, color: Colors.white24),
+                                        SizedBox(height: 8),
+                                        Text("No photo uploaded", style: TextStyle(color: Colors.white38, fontSize: 13)),
+                                      ],
+                                    ),
+                                  // Bottom Pill Badge
+                                  Positioned(
+                                    bottom: 12,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(alpha: 0.85),
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(color: Colors.white12),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.camera_alt_outlined, size: 14, color: Colors.white),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            hasImage ? "Click the photo for options" : "Click to upload photo",
+                                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+
+                          // 2. Material Name
+                          Text(
+                            item.name,
+                            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 8),
+
+                          // 3. Topic / Category Badge
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.5)),
+                            ),
+                            child: Text(
+                              item.category,
+                              style: const TextStyle(color: Color(0xFFF59E0B), fontSize: 13, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+
+                          // 4. Three Stats Grid: In stock, Borrowed, Added
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.25),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text("In stock", style: TextStyle(color: Colors.white54, fontSize: 11)),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        "${item.quantity}",
+                                        style: const TextStyle(color: Color(0xFF10B981), fontSize: 18, fontWeight: FontWeight.bold),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.25),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text("Borrowed", style: TextStyle(color: Colors.white54, fontSize: 11)),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        "$borrowedCount",
+                                        style: const TextStyle(color: Color(0xFFF59E0B), fontSize: 18, fontWeight: FontWeight.bold),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.25),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text("Added", style: TextStyle(color: Colors.white54, fontSize: 11)),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        item.date,
+                                        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 18),
+
+                          // 5. Description Block
+                          const Text(
+                            "DESCRIPTION",
+                            style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.8),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            hasDesc ? item.description!.trim() : "No description provided.",
+                            style: TextStyle(
+                              color: hasDesc ? Colors.white70 : Colors.white38,
+                              fontSize: 13,
+                              height: 1.4,
+                              fontStyle: hasDesc ? FontStyle.normal : FontStyle.italic,
+                            ),
+                          ),
+                          const SizedBox(height: 22),
+
+                          // 6. Action Buttons: Edit and Delete
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () {
+                                    Navigator.pop(dialogContext);
+                                    _editInventoryItemDialog(item);
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF2563EB),
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    elevation: 0,
+                                  ),
+                                  child: const Text("Edit", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () {
+                                    Navigator.pop(dialogContext);
+                                    _confirmDeleteDialog(item);
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF331E23),
+                                    foregroundColor: const Color(0xFFF87171),
+                                    side: BorderSide(color: const Color(0xFF7F2626).withValues(alpha: 0.6)),
+                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    elevation: 0,
+                                  ),
+                                  child: const Text("Delete", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Close button at top-right
+                    Positioned(
+                      top: 14,
+                      right: 14,
+                      child: InkWell(
+                        onTap: () => Navigator.pop(dialogContext),
+                        borderRadius: BorderRadius.circular(20),
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white.withValues(alpha: 0.08),
+                          ),
+                          child: const Icon(Icons.close, size: 18, color: Colors.white70),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 14),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.black26,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      Text("Category: ${item.category}", style: const TextStyle(color: Colors.amberAccent)),
-                      Text("Stock: ${item.quantity}", style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
@@ -1601,92 +1917,93 @@ class _MainDashboardState extends State<MainDashboard> {
                     itemBuilder: (context, index) {
                       final item = items[index];
                       final hasDesc = item.description != null && item.description!.trim().isNotEmpty;
-                      return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.05)))),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              flex: 3,
-                              child: Row(
-                                children: [
-                                  Tooltip(
-                                    message: item.imageBytes != null ? "Click to view full photo" : "No photo",
-                                    child: InkWell(
-                                      onTap: item.imageBytes != null
-                                          ? () => _showImagePreviewDialog(item)
-                                          : null,
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: Container(
-                                        width: 44,
-                                        height: 44,
-                                        decoration: BoxDecoration(
-                                          color: Colors.white10,
-                                          borderRadius: BorderRadius.circular(8),
-                                          border: Border.all(color: Colors.white24),
-                                        ),
-                                        child: item.imageBytes != null
-                                            ? ClipRRect(
-                                                borderRadius: BorderRadius.circular(7),
-                                                child: Image.memory(
-                                                  item.imageBytes!,
-                                                  cacheWidth: 100,
-                                                  width: 44,
-                                                  height: 44,
-                                                  fit: BoxFit.cover,
-                                                  filterQuality: FilterQuality.low,
-                                                  errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white38, size: 20),
-                                                ),
-                                              )
-                                            : const Icon(Icons.inventory_2_outlined, color: Colors.white30, size: 22),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Text(
-                                          item.name,
-                                          style: const TextStyle(fontSize: 17, color: Colors.white, fontWeight: FontWeight.w600),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        if (hasDesc) ...[
-                                          const SizedBox(height: 3),
-                                          Text(
-                                            item.description!.trim(),
-                                            style: const TextStyle(fontSize: 12, color: Colors.white60),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Expanded(flex: 2, child: Align(alignment: Alignment.centerLeft, child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)), child: Text(item.category, style: const TextStyle(color: Colors.amberAccent, fontSize: 14))))),
-                            Expanded(flex: 1, child: Text("${item.quantity}", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.greenAccent))),
-                            Expanded(flex: 2, child: Text(item.date, style: const TextStyle(color: Colors.white70, fontSize: 14))),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
+                      return Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => _showMaterialDetailsDialog(item),
+                          hoverColor: Colors.white.withValues(alpha: 0.04),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.05)))),
+                            child: Row(
                               children: [
-                                IconButton(
-                                  tooltip: "Edit Material",
-                                  icon: const Icon(Icons.edit_outlined, color: Colors.blueAccent),
-                                  onPressed: () => _editInventoryItemDialog(item),
+                                Expanded(
+                                  flex: 3,
+                                  child: Row(
+                                    children: [
+                                      Tooltip(
+                                        message: "Click to view full component card",
+                                        child: Container(
+                                          width: 44,
+                                          height: 44,
+                                          decoration: BoxDecoration(
+                                            color: Colors.white10,
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(color: Colors.white24),
+                                          ),
+                                          child: item.imageBytes != null
+                                              ? ClipRRect(
+                                                  borderRadius: BorderRadius.circular(7),
+                                                  child: Image.memory(
+                                                    item.imageBytes!,
+                                                    cacheWidth: 100,
+                                                    width: 44,
+                                                    height: 44,
+                                                    fit: BoxFit.cover,
+                                                    filterQuality: FilterQuality.low,
+                                                    errorBuilder: (_, __, _) => const Icon(Icons.broken_image, color: Colors.white38, size: 20),
+                                                  ),
+                                                )
+                                              : const Icon(Icons.inventory_2_outlined, color: Colors.white30, size: 22),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Text(
+                                              item.name,
+                                              style: const TextStyle(fontSize: 17, color: Colors.white, fontWeight: FontWeight.w600),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            if (hasDesc) ...[
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                item.description!.trim(),
+                                                style: const TextStyle(fontSize: 12, color: Colors.white60),
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                                IconButton(
-                                  tooltip: "Delete Material",
-                                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                                  onPressed: () => _confirmDeleteDialog(item),
+                                Expanded(flex: 2, child: Align(alignment: Alignment.centerLeft, child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)), child: Text(item.category, style: const TextStyle(color: Colors.amberAccent, fontSize: 14))))),
+                                Expanded(flex: 1, child: Text("${item.quantity}", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.greenAccent))),
+                                Expanded(flex: 2, child: Text(item.date, style: const TextStyle(color: Colors.white70, fontSize: 14))),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      tooltip: "Edit Material",
+                                      icon: const Icon(Icons.edit_outlined, color: Colors.blueAccent),
+                                      onPressed: () => _editInventoryItemDialog(item),
+                                    ),
+                                    IconButton(
+                                      tooltip: "Delete Material",
+                                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                      onPressed: () => _confirmDeleteDialog(item),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
-                          ],
+                          ),
                         ),
                       );
                     },
@@ -1743,7 +2060,7 @@ class _MainDashboardState extends State<MainDashboard> {
             Stack(
               children: [
                 InkWell(
-                  onTap: bytes != null ? () => _showImagePreviewDialog(item) : null,
+                  onTap: () => _showMaterialDetailsDialog(item),
                   child: Container(
                     height: 195,
                     width: double.infinity,
@@ -1754,7 +2071,7 @@ class _MainDashboardState extends State<MainDashboard> {
                             cacheWidth: 500,
                             fit: BoxFit.cover,
                             filterQuality: FilterQuality.low,
-                            errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 36)),
+                            errorBuilder: (_, __, _) => const Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 36)),
                           )
                         : const Center(child: Icon(Icons.inventory_2_outlined, color: Colors.white30, size: 52)),
                   ),
@@ -1779,7 +2096,9 @@ class _MainDashboardState extends State<MainDashboard> {
             ),
             // Details body - balanced spacing without giant gap
             Expanded(
-              child: Padding(
+              child: InkWell(
+                onTap: () => _showMaterialDetailsDialog(item),
+                child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1847,6 +2166,7 @@ class _MainDashboardState extends State<MainDashboard> {
                 ),
               ),
             ),
+          ),
           ],
         ),
       ),
