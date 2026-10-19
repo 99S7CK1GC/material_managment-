@@ -1,0 +1,304 @@
+name: Build & Release Wameedh Multiplatform
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release Tag (e.g. v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+      release_name:
+        description: 'Release Name (e.g. Wameedh v1.0.0)'
+        required: false
+        default: 'Wameedh v1.0.0'
+      prerelease:
+        description: 'Mark as pre-release'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  # -------------------------------------------------------------
+  # 1. Android APK Build
+  # -------------------------------------------------------------
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Configure .env credentials
+        shell: bash
+        env:
+          ENV_FILE: ${{ secrets.ENV_FILE }}
+        run: |
+          mkdir -p wameedh_app
+          if [ -n "$ENV_FILE" ]; then
+            echo "$ENV_FILE" > wameedh_app/.env
+          elif [ ! -f "wameedh_app/.env" ]; then
+            cat << 'EOF' > wameedh_app/.env
+DB_HOST=ep-divine-tree-b5uupalq-pooler.c-7.us-east-2.aws.neon.tech
+DB_NAME=neondb
+DB_USER=neondb_owner
+DB_PASSWORD=npg_cNKL5vGwQ9st
+DB_PORT=5432
+EOF
+          fi
+
+      - name: Install dependencies
+        working-directory: wameedh_app
+        run: flutter pub get
+
+      - name: Build Android Release APK
+        working-directory: wameedh_app
+        run: flutter build apk --release
+
+      - name: Stage Android APK Artifact
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          cp wameedh_app/build/app/outputs/flutter-apk/app-release.apk artifacts/Wameedh-Android.apk
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wameedh-Android
+          path: artifacts/Wameedh-Android.apk
+          if-no-files-found: error
+
+  # -------------------------------------------------------------
+  # 2. Windows x64 Build
+  # -------------------------------------------------------------
+  build-windows:
+    name: Build Windows x64 Package
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Configure .env credentials
+        shell: pwsh
+        env:
+          ENV_FILE: ${{ secrets.ENV_FILE }}
+        run: |
+          New-Item -ItemType Directory -Force -Path wameedh_app
+          if ($env:ENV_FILE) {
+            $env:ENV_FILE | Out-File -FilePath wameedh_app\.env -Encoding utf8
+          } elseif (-not (Test-Path "wameedh_app\.env")) {
+@"
+DB_HOST=ep-divine-tree-b5uupalq-pooler.c-7.us-east-2.aws.neon.tech
+DB_NAME=neondb
+DB_USER=neondb_owner
+DB_PASSWORD=npg_cNKL5vGwQ9st
+DB_PORT=5432
+"@ | Out-File -FilePath wameedh_app\.env -Encoding utf8
+          }
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Install dependencies
+        working-directory: wameedh_app
+        run: flutter pub get
+
+      - name: Build Windows Release Bundle
+        working-directory: wameedh_app
+        run: flutter build windows --release
+
+      - name: Package Windows Zip Archive
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts
+          Compress-Archive -Path wameedh_app\build\windows\x64\runner\Release\* -DestinationPath artifacts\Wameedh-Windows-x64.zip -Force
+
+      - name: Upload Windows Archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wameedh-Windows-x64
+          path: artifacts/Wameedh-Windows-x64.zip
+          if-no-files-found: error
+
+  # -------------------------------------------------------------
+  # 3. Linux x64 Build
+  # -------------------------------------------------------------
+  build-linux:
+    name: Build Linux x64 Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Configure .env credentials
+        shell: bash
+        env:
+          ENV_FILE: ${{ secrets.ENV_FILE }}
+        run: |
+          mkdir -p wameedh_app
+          if [ -n "$ENV_FILE" ]; then
+            echo "$ENV_FILE" > wameedh_app/.env
+          elif [ ! -f "wameedh_app/.env" ]; then
+            cat << 'EOF' > wameedh_app/.env
+DB_HOST=ep-divine-tree-b5uupalq-pooler.c-7.us-east-2.aws.neon.tech
+DB_NAME=neondb
+DB_USER=neondb_owner
+DB_PASSWORD=npg_cNKL5vGwQ9st
+DB_PORT=5432
+EOF
+          fi
+
+      - name: Enable Linux desktop
+        run: flutter config --enable-linux-desktop
+
+      - name: Install dependencies
+        working-directory: wameedh_app
+        run: flutter pub get
+
+      - name: Build Linux Release Bundle
+        working-directory: wameedh_app
+        run: flutter build linux --release
+
+      - name: Package Linux Tarball Archive
+        shell: bash
+        run: |
+          mkdir -p dist/Wameedh-Linux-x64 artifacts
+          cp -r wameedh_app/build/linux/x64/release/bundle/* dist/Wameedh-Linux-x64/
+          cat << 'EOF' > dist/Wameedh-Linux-x64/run.sh
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+exec ./wameedh_app "$@"
+EOF
+          chmod +x dist/Wameedh-Linux-x64/run.sh dist/Wameedh-Linux-x64/wameedh_app
+          cat << 'EOF' > dist/Wameedh-Linux-x64/README.txt
+Wameedh Material Organizer - Linux (x86_64)
+===========================================
+
+How to run:
+1. Double-click "run.sh" or in a terminal run:
+   ./run.sh
+
+Or execute the binary directly:
+   ./wameedh_app
+EOF
+          tar -czvf artifacts/Wameedh-Linux-x64.tar.gz -C dist Wameedh-Linux-x64
+
+      - name: Upload Linux Archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wameedh-Linux-x64
+          path: artifacts/Wameedh-Linux-x64.tar.gz
+          if-no-files-found: error
+
+  # -------------------------------------------------------------
+  # 4. Publish Release to GitHub Releases
+  # -------------------------------------------------------------
+  release:
+    name: Publish Release Artifacts
+    needs: [build-android, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Android Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Wameedh-Android
+          path: release-downloads
+
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Wameedh-Windows-x64
+          path: release-downloads
+
+      - name: Download Linux Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Wameedh-Linux-x64
+          path: release-downloads
+
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag || github.ref_name }}
+          name: ${{ github.event.inputs.release_name || github.ref_name }}
+          prerelease: ${{ github.event.inputs.prerelease == true }}
+          generate_release_notes: true
+          files: |
+            release-downloads/Wameedh-Android.apk
+            release-downloads/Wameedh-Windows-x64.zip
+            release-downloads/Wameedh-Linux-x64.tar.gz
+          body: |
+            ## ⚡ Wameedh Material Organizer — Release Downloads
+
+            Welcome to the latest release of **Wameedh**! Below you can download installable and standalone packages ready for Android, Windows, and Linux.
+
+            ---
+
+            ### 📱 Android Download
+            - **Package**: `Wameedh-Android.apk`
+            - **Installation**:
+              1. Download `Wameedh-Android.apk` directly to your Android device.
+              2. Open the file and allow "Install from unknown sources" if prompted.
+              3. Launch **Wameedh** from your home screen / app drawer.
+
+            ---
+
+            ### 🪟 Windows Download
+            - **Package**: `Wameedh-Windows-x64.zip`
+            - **Usage**:
+              1. Download and extract `Wameedh-Windows-x64.zip`.
+              2. Double-click `wameedh_app.exe` to run the application immediately (no installation required).
+
+            ---
+
+            ### 🐧 Linux Download
+            - **Package**: `Wameedh-Linux-x64.tar.gz`
+            - **Usage**:
+              1. Download and extract the archive:
+                 ```bash
+                 tar -xzvf Wameedh-Linux-x64.tar.gz
+                 cd Wameedh-Linux-x64
+                 ./run.sh
+                 ```
+              2. Or double-click `run.sh` in your file manager.
+
+            ---
+            *All packages are pre-configured to sync live with your cloud Neon PostgreSQL database.*

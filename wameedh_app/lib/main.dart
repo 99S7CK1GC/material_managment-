@@ -1530,9 +1530,298 @@ class _MainDashboardState extends State<MainDashboard> {
     return "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
   }
 
+  Widget _buildPhotoPickerWidget({double size = 56}) {
+    return InkWell(
+      onTap: () async {
+        final img = await _pickAndProcessImage();
+        if (img != null) {
+          setState(() => _selectedImageBase64 = img);
+        }
+      },
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: Colors.black26,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: _selectedImageBase64 != null ? Colors.blueAccent : Colors.white24),
+        ),
+        child: _selectedImageBase64 != null
+            ? Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(9),
+                    child: Image.memory(
+                      base64Decode(_selectedImageBase64!),
+                      width: size,
+                      height: size,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  Positioned(
+                    top: -4,
+                    right: -4,
+                    child: InkWell(
+                      onTap: () => setState(() => _selectedImageBase64 = null),
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
+                        child: const Icon(Icons.close, size: 12, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.add_a_photo_outlined, color: Colors.blueAccent, size: size > 50 ? 22 : 18),
+                  const SizedBox(height: 2),
+                  const Text("Photo", style: TextStyle(color: Colors.white54, fontSize: 10)),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryDropdownRow({double height = 56}) {
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            height: height,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            alignment: Alignment.centerLeft,
+            decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(10)),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _selectedCategory,
+                dropdownColor: const Color(0xFF203a43),
+                isExpanded: true,
+                items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(color: Colors.white, fontSize: 13)))).toList(),
+                onChanged: (val) => setState(() => _selectedCategory = val),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 4),
+        IconButton(
+          icon: const Icon(Icons.edit_note, color: Colors.amberAccent, size: 26),
+          tooltip: "Edit Topic Name",
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+          onPressed: _showEditCategoryDialog,
+        ),
+        const SizedBox(width: 4),
+        IconButton(
+          icon: const Icon(Icons.add_circle, color: Colors.amberAccent, size: 26),
+          tooltip: "Add New Topic",
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+          onPressed: _showAddCategoryDialog,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSearchNameField() {
+    return Container(
+      height: 46,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _searchName.isNotEmpty ? Colors.blueAccent : Colors.white12),
+      ),
+      child: TextField(
+        controller: _searchNameController,
+        style: const TextStyle(color: Colors.white, fontSize: 14),
+        decoration: InputDecoration(
+          prefixIcon: const Icon(Icons.search, color: Colors.blueAccent, size: 20),
+          hintText: "Search material by name...",
+          hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+          suffixIcon: _searchNameController.text.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear, color: Colors.white54, size: 18),
+                  tooltip: "Clear Search",
+                  onPressed: () {
+                    setState(() {
+                      _searchNameController.clear();
+                      _searchName = "";
+                    });
+                  },
+                )
+              : null,
+        ),
+        onChanged: (val) => setState(() => _searchName = val.trim()),
+      ),
+    );
+  }
+
+  Widget _buildSearchTopicField() {
+    return Container(
+      height: 46,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: (_searchTopic.isNotEmpty || _filterCategory != "All") ? Colors.amberAccent : Colors.white12),
+      ),
+      child: TextField(
+        controller: _searchTopicController,
+        style: const TextStyle(color: Colors.white, fontSize: 14),
+        decoration: InputDecoration(
+          prefixIcon: const Icon(Icons.category_outlined, color: Colors.amberAccent, size: 20),
+          hintText: "Search or choose topic...",
+          hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+          suffixIcon: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_searchTopicController.text.isNotEmpty || _filterCategory != "All")
+                IconButton(
+                  icon: const Icon(Icons.clear, color: Colors.white54, size: 18),
+                  tooltip: "Reset Topic Filter",
+                  onPressed: () {
+                    setState(() {
+                      _searchTopicController.clear();
+                      _searchTopic = "";
+                      _filterCategory = "All";
+                    });
+                  },
+                ),
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.arrow_drop_down, color: Colors.white70),
+                tooltip: "Choose Topic from List",
+                color: const Color(0xFF203a43),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                onSelected: (val) {
+                  setState(() {
+                    if (val == "All") {
+                      _searchTopicController.clear();
+                      _searchTopic = "";
+                      _filterCategory = "All";
+                    } else {
+                      _searchTopicController.text = val;
+                      _searchTopic = val;
+                      _filterCategory = val;
+                    }
+                  });
+                },
+                itemBuilder: (context) {
+                  final topics = ["All", ..._categories];
+                  final currentActive = _searchTopic.isNotEmpty ? _searchTopic : _filterCategory;
+                  return topics.map((t) => PopupMenuItem(
+                    value: t,
+                    child: Row(
+                      children: [
+                        Icon(
+                          t == "All" ? Icons.select_all : Icons.label_outline,
+                          size: 18,
+                          color: (t == currentActive || (currentActive == "All" && t == "All")) ? Colors.amberAccent : Colors.white54,
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          t == "All" ? "Show All Topics" : t,
+                          style: TextStyle(
+                            color: (t == currentActive || (currentActive == "All" && t == "All")) ? Colors.amberAccent : Colors.white,
+                            fontWeight: (t == currentActive || (currentActive == "All" && t == "All")) ? FontWeight.bold : FontWeight.normal,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )).toList();
+                },
+              ),
+            ],
+          ),
+        ),
+        onChanged: (val) {
+          setState(() {
+            _searchTopic = val.trim();
+            _filterCategory = "All";
+          });
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+
+    final bool isMobile = MediaQuery.of(context).size.width < 800;
+
+    if (isMobile) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text(
+            "WAMEEDH",
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 2,
+              color: Colors.amberAccent,
+            ),
+          ),
+          centerTitle: true,
+          backgroundColor: const Color(0xFF0f2027),
+          elevation: 0,
+        ),
+        bottomNavigationBar: NavigationBarTheme(
+          data: NavigationBarThemeData(
+            indicatorColor: Colors.amberAccent.withValues(alpha: 0.25),
+            labelTextStyle: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.selected)) {
+                return const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 12);
+              }
+              return const TextStyle(color: Colors.white60, fontSize: 12);
+            }),
+            iconTheme: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.selected)) {
+                return const IconThemeData(color: Colors.amberAccent);
+              }
+              return const IconThemeData(color: Colors.white60);
+            }),
+          ),
+          child: NavigationBar(
+            backgroundColor: const Color(0xFF0f2027),
+            selectedIndex: _currentViewIndex,
+            onDestinationSelected: (idx) => setState(() => _currentViewIndex = idx),
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.inventory_2_outlined),
+                selectedIcon: Icon(Icons.inventory_2),
+                label: "Inventory",
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.people_outline),
+                selectedIcon: Icon(Icons.people),
+                label: "Borrowers Log",
+              ),
+            ],
+          ),
+        ),
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFF0f2027), Color(0xFF203a43), Color(0xFF2c5364)],
+            ),
+          ),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 10.0),
+              child: _currentViewIndex == 0 ? _buildInventoryView(isMobile: true) : _buildBorrowersView(isMobile: true),
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       body: Container(
@@ -1556,7 +1845,7 @@ class _MainDashboardState extends State<MainDashboard> {
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.all(32.0),
-                child: _currentViewIndex == 0 ? _buildInventoryView() : _buildBorrowersView(),
+                child: _currentViewIndex == 0 ? _buildInventoryView(isMobile: false) : _buildBorrowersView(isMobile: false),
               ),
             ),
           ],
@@ -1565,7 +1854,7 @@ class _MainDashboardState extends State<MainDashboard> {
     );
   }
 
-  Widget _buildInventoryView() {
+  Widget _buildInventoryView({bool isMobile = false}) {
     final filteredInventory = _inventory.where((item) {
       final matchesSearchName = _searchName.isEmpty ||
           item.name.toLowerCase().contains(_searchName.toLowerCase()) ||
@@ -1585,8 +1874,8 @@ class _MainDashboardState extends State<MainDashboard> {
           children: [
             Row(
               children: [
-                const Text("📦 Electronics Inventory", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
-                const SizedBox(width: 14),
+                Text(isMobile ? "📦 Inventory" : "📦 Electronics Inventory", style: TextStyle(fontSize: isMobile ? 20 : 32, fontWeight: FontWeight.bold, color: Colors.white)),
+                const SizedBox(width: 10),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
@@ -1627,297 +1916,126 @@ class _MainDashboardState extends State<MainDashboard> {
             ),
           ],
         ),
-        const SizedBox(height: 16),
-        // Search Bars Row: Search by Name & Search by Topic
-        Row(
-          children: [
-            // Search Bar for Names
-            Expanded(
-              flex: 5,
-              child: Container(
-                height: 46,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _searchName.isNotEmpty ? Colors.blueAccent : Colors.white12),
-                ),
-                child: TextField(
-                  controller: _searchNameController,
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.search, color: Colors.blueAccent, size: 20),
-                    hintText: "Search material by name...",
-                    hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                    suffixIcon: _searchNameController.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear, color: Colors.white54, size: 18),
-                            tooltip: "Clear Search",
-                            onPressed: () {
-                              setState(() {
-                                _searchNameController.clear();
-                                _searchName = "";
-                              });
-                            },
-                          )
-                        : null,
-                  ),
-                  onChanged: (val) => setState(() => _searchName = val.trim()),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            // Search Bar for Topics to Choose
-            Expanded(
-              flex: 4,
-              child: Container(
-                height: 46,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: (_searchTopic.isNotEmpty || _filterCategory != "All") ? Colors.amberAccent : Colors.white12),
-                ),
-                child: TextField(
-                  controller: _searchTopicController,
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.category_outlined, color: Colors.amberAccent, size: 20),
-                    hintText: "Search or choose topic...",
-                    hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                    suffixIcon: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (_searchTopicController.text.isNotEmpty || _filterCategory != "All")
-                          IconButton(
-                            icon: const Icon(Icons.clear, color: Colors.white54, size: 18),
-                            tooltip: "Reset Topic Filter",
-                            onPressed: () {
-                              setState(() {
-                                _searchTopicController.clear();
-                                _searchTopic = "";
-                                _filterCategory = "All";
-                              });
-                            },
-                          ),
-                        PopupMenuButton<String>(
-                          icon: const Icon(Icons.arrow_drop_down, color: Colors.white70),
-                          tooltip: "Choose Topic from List",
-                          color: const Color(0xFF203a43),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          onSelected: (val) {
-                            setState(() {
-                              if (val == "All") {
-                                _searchTopicController.clear();
-                                _searchTopic = "";
-                                _filterCategory = "All";
-                              } else {
-                                _searchTopicController.text = val;
-                                _searchTopic = val;
-                                _filterCategory = val;
-                              }
-                            });
-                          },
-                          itemBuilder: (context) {
-                            final topics = ["All", ..._categories];
-                            final currentActive = _searchTopic.isNotEmpty ? _searchTopic : _filterCategory;
-                            return topics.map((t) => PopupMenuItem(
-                              value: t,
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    t == "All" ? Icons.select_all : Icons.label_outline,
-                                    size: 18,
-                                    color: (t == currentActive || (currentActive == "All" && t == "All")) ? Colors.amberAccent : Colors.white54,
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Text(
-                                    t == "All" ? "Show All Topics" : t,
-                                    style: TextStyle(
-                                      color: (t == currentActive || (currentActive == "All" && t == "All")) ? Colors.amberAccent : Colors.white,
-                                      fontWeight: (t == currentActive || (currentActive == "All" && t == "All")) ? FontWeight.bold : FontWeight.normal,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )).toList();
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                  onChanged: (val) {
-                    setState(() {
-                      _searchTopic = val.trim();
-                      _filterCategory = "All";
-                    });
-                  },
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
+        // Search Bars Row / Column
+        if (isMobile) ...[
+          _buildSearchNameField(),
+          const SizedBox(height: 8),
+          _buildSearchTopicField(),
+        ] else
+          Row(
+            children: [
+              Expanded(flex: 5, child: _buildSearchNameField()),
+              const SizedBox(width: 12),
+              Expanded(flex: 4, child: _buildSearchTopicField()),
+            ],
+          ),
+        SizedBox(height: isMobile ? 12 : 20),
         GlassContainer(
-          padding: const EdgeInsets.all(20),
+          padding: EdgeInsets.all(isMobile ? 12 : 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  InkWell(
-                    onTap: () async {
-                      final img = await _pickAndProcessImage();
-                      if (img != null) {
-                        setState(() => _selectedImageBase64 = img);
-                      }
-                    },
-                    borderRadius: BorderRadius.circular(10),
-                    child: Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        color: Colors.black26,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: _selectedImageBase64 != null ? Colors.blueAccent : Colors.white24),
+              if (isMobile) ...[
+                Row(
+                  children: [
+                    _buildPhotoPickerWidget(size: 48),
+                    const SizedBox(width: 10),
+                    Expanded(child: _buildTextField(_matNameController, "Material Name (e.g. ESP32)")),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    _buildQuantityStepper(_matQtyController, min: 1, label: "Qty", height: 48),
+                    const SizedBox(width: 8),
+                    Expanded(child: _buildCategoryDropdownRow(height: 48)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(child: _buildTextField(_matDescController, "Description (Optional)")),
+                    const SizedBox(width: 8),
+                    ElevatedButton.icon(
+                      onPressed: _addInventoryItem,
+                      icon: const Icon(Icons.add, color: Colors.white, size: 18),
+                      label: const Text("Add", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blueAccent,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
-                      child: _selectedImageBase64 != null
-                          ? Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(9),
-                                  child: Image.memory(
-                                    base64Decode(_selectedImageBase64!),
-                                    width: 56,
-                                    height: 56,
-                                    fit: BoxFit.cover,
-                                  ),
-                                ),
-                                Positioned(
-                                  top: -4,
-                                  right: -4,
-                                  child: InkWell(
-                                    onTap: () => setState(() => _selectedImageBase64 = null),
-                                    child: Container(
-                                      padding: const EdgeInsets.all(3),
-                                      decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
-                                      child: const Icon(Icons.close, size: 12, color: Colors.white),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            )
-                          : Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: const [
-                                Icon(Icons.add_a_photo_outlined, color: Colors.blueAccent, size: 22),
-                                SizedBox(height: 2),
-                                Text("Photo", style: TextStyle(color: Colors.white54, fontSize: 10)),
-                              ],
-                            ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(flex: 3, child: _buildTextField(_matNameController, "Material Name (e.g. ESP32)")),
-                  const SizedBox(width: 12),
-                  _buildQuantityStepper(_matQtyController, min: 1, label: "Qty", height: 56),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 3,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Container(
-                            height: 56,
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            alignment: Alignment.centerLeft,
-                            decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(10)),
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<String>(
-                                value: _selectedCategory,
-                                dropdownColor: const Color(0xFF203a43),
-                                isExpanded: true,
-                                items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(color: Colors.white)))).toList(),
-                                onChanged: (val) => setState(() => _selectedCategory = val),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        IconButton(
-                          icon: const Icon(Icons.edit_note, color: Colors.amberAccent, size: 30),
-                          tooltip: "Edit Topic Name",
-                          onPressed: _showEditCategoryDialog,
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.add_circle, color: Colors.amberAccent, size: 32),
-                          tooltip: "Add New Topic",
-                          onPressed: _showAddCategoryDialog,
-                        ),
-                      ],
+                  ],
+                ),
+              ] else ...[
+                Row(
+                  children: [
+                    _buildPhotoPickerWidget(size: 56),
+                    const SizedBox(width: 12),
+                    Expanded(flex: 3, child: _buildTextField(_matNameController, "Material Name (e.g. ESP32)")),
+                    const SizedBox(width: 12),
+                    _buildQuantityStepper(_matQtyController, min: 1, label: "Qty", height: 56),
+                    const SizedBox(width: 12),
+                    Expanded(flex: 3, child: _buildCategoryDropdownRow(height: 56)),
+                    const SizedBox(width: 12),
+                    ElevatedButton.icon(
+                      onPressed: _addInventoryItem,
+                      icon: const Icon(Icons.add, color: Colors.white),
+                      label: const Text("Add", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 19)),
+                    )
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildTextField(_matDescController, "Description (Optional - e.g. Pinout notes, storage bin, specs)"),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  ElevatedButton.icon(
-                    onPressed: _addInventoryItem,
-                    icon: const Icon(Icons.add, color: Colors.white),
-                    label: const Text("Add", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 19)),
-                  )
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildTextField(_matDescController, "Description (Optional - e.g. Pinout notes, storage bin, specs)"),
-                  ),
-                ],
-              ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
-        const SizedBox(height: 24),
+        SizedBox(height: isMobile ? 12 : 24),
         Expanded(
           child: _isCardView
               ? _buildInventoryCardsView(filteredInventory)
-              : _buildInventoryTableView(filteredInventory),
+              : _buildInventoryTableView(filteredInventory, isMobile: isMobile),
         ),
       ],
     );
   }
 
-  Widget _buildInventoryTableView(List<MaterialItem> items) {
-    return GlassContainer(
-      padding: const EdgeInsets.all(0),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.2)))),
-            child: Row(
-              children: const [
-                Expanded(flex: 3, child: Text("Material Name", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white))),
-                Expanded(flex: 2, child: Text("Topic", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.amberAccent))),
-                Expanded(flex: 1, child: Text("Qty in Stock", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.greenAccent))),
-                Expanded(flex: 2, child: Text("Date", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white))),
-                SizedBox(width: 96), 
-              ],
-            ),
+  Widget _buildInventoryTableView(List<MaterialItem> items, {bool isMobile = false}) {
+    Widget tableContent = Column(
+      children: [
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 24, vertical: 14),
+          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.2)))),
+          child: Row(
+            children: const [
+              Expanded(flex: 3, child: Text("Material Name", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.white))),
+              Expanded(flex: 2, child: Text("Topic", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.amberAccent))),
+              Expanded(flex: 1, child: Text("Qty in Stock", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.greenAccent))),
+              Expanded(flex: 2, child: Text("Date", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.white))),
+              SizedBox(width: 96), 
+            ],
           ),
-          Expanded(
-            child: items.isEmpty
-                ? const Center(child: Text("No items found.", style: TextStyle(color: Colors.white54, fontSize: 18)))
-                : ListView.builder(
-                    physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-                    itemCount: items.length,
-                    itemBuilder: (context, index) {
-                      final item = items[index];
-                      final hasDesc = item.description != null && item.description!.trim().isNotEmpty;
-                      return Material(
+        ),
+        Expanded(
+          child: items.isEmpty
+              ? const Center(child: Text("No items found.", style: TextStyle(color: Colors.white54, fontSize: 18)))
+              : ListView.builder(
+                  physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+                  itemCount: items.length,
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    final hasDesc = item.description != null && item.description!.trim().isNotEmpty;
+                    return Material(
                         color: Colors.transparent,
                         child: InkWell(
                           onTap: () => _showMaterialDetailsDialog(item),
@@ -2010,7 +2128,25 @@ class _MainDashboardState extends State<MainDashboard> {
                   ),
           ),
         ],
-      ),
+      );
+
+    if (isMobile) {
+      return GlassContainer(
+        padding: const EdgeInsets.all(0),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          child: SizedBox(
+            width: 720,
+            child: tableContent,
+          ),
+        ),
+      );
+    }
+
+    return GlassContainer(
+      padding: const EdgeInsets.all(0),
+      child: tableContent,
     );
   }
 
@@ -2173,7 +2309,299 @@ class _MainDashboardState extends State<MainDashboard> {
     );
   }
 
-  Widget _buildBorrowersView() {
+  Widget _buildBorrowHistorySearchContainer() {
+    return Container(
+      height: 42,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _borrowHistorySearch.isNotEmpty ? Colors.amberAccent : Colors.white12),
+      ),
+      child: TextField(
+        controller: _borrowHistorySearchController,
+        style: const TextStyle(color: Colors.white, fontSize: 13),
+        decoration: InputDecoration(
+          prefixIcon: const Icon(Icons.search, color: Colors.amberAccent, size: 18),
+          hintText: "Search records by person, item, topic...",
+          hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+          suffixIcon: _borrowHistorySearch.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear, color: Colors.white54, size: 16),
+                  onPressed: () {
+                    setState(() {
+                      _borrowHistorySearchController.clear();
+                      _borrowHistorySearch = "";
+                    });
+                  },
+                )
+              : null,
+        ),
+        onChanged: (val) {
+          setState(() {
+            _borrowHistorySearch = val.trim();
+          });
+        },
+      ),
+    );
+  }
+
+  Widget _buildBorrowTopicSelectorWidget({double height = 56}) {
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        color: Colors.black26,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: (_borrowTopicFilter.isNotEmpty && _borrowTopicFilter != "All")
+              ? Colors.amberAccent
+              : Colors.transparent,
+        ),
+      ),
+      child: TextField(
+        controller: _borrowTopicController,
+        style: const TextStyle(color: Colors.white, fontSize: 14),
+        decoration: InputDecoration(
+          prefixIcon: const Icon(Icons.category_outlined, color: Colors.amberAccent, size: 20),
+          hintText: "Search topic...",
+          hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 14),
+          suffixIcon: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_borrowTopicController.text.isNotEmpty || _borrowTopicFilter != "All")
+                IconButton(
+                  icon: const Icon(Icons.clear, color: Colors.white54, size: 18),
+                  tooltip: "Reset Topic Filter",
+                  onPressed: () {
+                    setState(() {
+                      _borrowTopicController.clear();
+                      _borrowTopicFilter = "All";
+                      _syncSelectedMaterialOnTopicChange();
+                    });
+                  },
+                ),
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.arrow_drop_down, color: Colors.white70),
+                tooltip: "Choose Topic from List",
+                color: const Color(0xFF203a43),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                onSelected: (val) {
+                  setState(() {
+                    if (val == "All") {
+                      _borrowTopicController.clear();
+                      _borrowTopicFilter = "All";
+                    } else {
+                      _borrowTopicController.text = val;
+                      _borrowTopicFilter = val;
+                    }
+                    _syncSelectedMaterialOnTopicChange();
+                  });
+                },
+                itemBuilder: (context) {
+                  final topics = ["All", ..._categories];
+                  return topics.map((t) => PopupMenuItem(
+                    value: t,
+                    child: Row(
+                      children: [
+                        Icon(
+                          t == "All" ? Icons.apps : Icons.folder_outlined,
+                          size: 18,
+                          color: t == _borrowTopicFilter ? Colors.amberAccent : Colors.white70,
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          t == "All" ? "All Topics" : t,
+                          style: TextStyle(
+                            color: t == _borrowTopicFilter ? Colors.amberAccent : Colors.white,
+                            fontWeight: t == _borrowTopicFilter ? FontWeight.bold : FontWeight.normal,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )).toList();
+                },
+              ),
+            ],
+          ),
+        ),
+        onChanged: (val) {
+          setState(() {
+            _borrowTopicFilter = val.trim().isEmpty ? "All" : val.trim();
+            _syncSelectedMaterialOnTopicChange();
+          });
+        },
+      ),
+    );
+  }
+
+  Widget _buildBorrowMaterialSelectorWidget(List<MaterialItem> availableMaterials, {double height = 56}) {
+    return DropdownMenu<String>(
+      key: ValueKey("borrow_mat_${_borrowTopicFilter}_${_inventory.length}_$_selectedInventoryItemId"),
+      controller: _borrowMaterialController,
+      initialSelection: _selectedInventoryItemId,
+      expandedInsets: EdgeInsets.zero,
+      enableFilter: true,
+      enableSearch: true,
+      requestFocusOnTap: true,
+      menuHeight: 350,
+      hintText: "Search material by name...",
+      leadingIcon: const Icon(Icons.search, color: Colors.blueAccent, size: 20),
+      trailingIcon: const Icon(Icons.arrow_drop_down, color: Colors.white70),
+      selectedTrailingIcon: const Icon(Icons.arrow_drop_up, color: Colors.amberAccent),
+      textStyle: const TextStyle(color: Colors.white, fontSize: 14),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: Colors.black26,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Colors.blueAccent, width: 1.5)),
+        hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+      ),
+      menuStyle: MenuStyle(
+        backgroundColor: const WidgetStatePropertyAll(Color(0xFF203a43)),
+        elevation: const WidgetStatePropertyAll(12),
+        shape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Colors.white12))),
+      ),
+      filterCallback: (List<DropdownMenuEntry<String>> entries, String filter) {
+        final q = filter.trim().toLowerCase();
+        if (q.isEmpty) return entries;
+        return entries.where((e) {
+          final item = _inventory.firstWhere((inv) => inv.id == e.value, orElse: () => MaterialItem("", "", 0, "", ""));
+          return item.name.toLowerCase().contains(q) || item.category.toLowerCase().contains(q);
+        }).toList();
+      },
+      dropdownMenuEntries: availableMaterials.isEmpty
+          ? [
+              const DropdownMenuEntry<String>(
+                value: "",
+                label: "No materials available",
+                enabled: false,
+              )
+            ]
+          : availableMaterials.map((m) {
+              return DropdownMenuEntry<String>(
+                value: m.id,
+                label: m.name,
+                labelWidget: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      if (m.imageBytes != null)
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: Image.memory(
+                            m.imageBytes!,
+                            width: 34,
+                            height: 34,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, _) => Container(
+                              width: 34,
+                              height: 34,
+                              decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(6)),
+                              child: const Icon(Icons.hardware, size: 18, color: Colors.white54),
+                            ),
+                          ),
+                        )
+                      else
+                        Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(6)),
+                          child: const Icon(Icons.hardware, size: 18, color: Colors.white54),
+                        ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              m.name,
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              m.category,
+                              style: const TextStyle(color: Colors.amberAccent, fontSize: 11),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: m.quantity > 0 ? Colors.green.withValues(alpha: 0.2) : Colors.red.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: m.quantity > 0 ? Colors.greenAccent : Colors.redAccent,
+                            width: 1,
+                          ),
+                        ),
+                        child: Text(
+                          m.quantity > 0 ? "Stock: ${m.quantity}" : "Out of stock",
+                          style: TextStyle(
+                            color: m.quantity > 0 ? Colors.greenAccent : Colors.redAccent,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+      onSelected: (val) {
+        setState(() {
+          _selectedInventoryItemId = (val != null && val.isNotEmpty) ? val : null;
+          if (_selectedInventoryItemId != null) {
+            final sel = _inventory.firstWhere((m) => m.id == _selectedInventoryItemId, orElse: () => _inventory.first);
+            _borrowMaterialController.text = sel.name;
+          }
+        });
+      },
+    );
+  }
+
+  Widget _buildStockBadge(MaterialItem item, {double height = 56}) {
+    return Container(
+      height: height,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: item.quantity > 0 ? Colors.green.withValues(alpha: 0.15) : Colors.red.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: item.quantity > 0 ? Colors.greenAccent.withValues(alpha: 0.5) : Colors.redAccent.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text("Available", style: TextStyle(color: Colors.white54, fontSize: 10)),
+          Text(
+            "${item.quantity}",
+            style: TextStyle(
+              color: item.quantity > 0 ? Colors.greenAccent : Colors.redAccent,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBorrowersView({bool isMobile = false}) {
     final availableMaterials = _getFilteredBorrowMaterials();
     if (_selectedInventoryItemId != null && !availableMaterials.any((m) => m.id == _selectedInventoryItemId)) {
       _selectedInventoryItemId = availableMaterials.isNotEmpty ? availableMaterials.first.id : null;
@@ -2211,362 +2639,133 @@ class _MainDashboardState extends State<MainDashboard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text("📝 Checkout Log", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
-        const SizedBox(height: 24),
+        Text("📝 Checkout Log", style: TextStyle(fontSize: isMobile ? 20 : 32, fontWeight: FontWeight.bold, color: Colors.white)),
+        SizedBox(height: isMobile ? 12 : 24),
         GlassContainer(
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.all(isMobile ? 12 : 24),
           child: Column(
             children: [
-              Row(
-                children: [
-                  Expanded(flex: 2, child: _buildTextField(_personNameController, "Person's Name")),
-                  const SizedBox(width: 12),
-                  Expanded(flex: 2, child: _buildTextField(_phoneController, "Phone Number")),
-                  const SizedBox(width: 12),
-                  Expanded(flex: 2, child: _buildTextField(_emailController, "Email Address")),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  // 1. Topic Filter / Search Combo
-                  Expanded(
-                    flex: 3,
-                    child: Container(
-                      height: 56,
-                      decoration: BoxDecoration(
-                        color: Colors.black26,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: (_borrowTopicFilter.isNotEmpty && _borrowTopicFilter != "All")
-                              ? Colors.amberAccent
-                              : Colors.transparent,
+              if (isMobile) ...[
+                _buildTextField(_personNameController, "Person's Name"),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(child: _buildTextField(_phoneController, "Phone Number")),
+                    const SizedBox(width: 8),
+                    Expanded(child: _buildTextField(_emailController, "Email Address")),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _buildBorrowTopicSelectorWidget(height: 48),
+                const SizedBox(height: 8),
+                _buildBorrowMaterialSelectorWidget(availableMaterials, height: 48),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    if (currentSelectedItem != null) ...[
+                      _buildStockBadge(currentSelectedItem, height: 48),
+                      const SizedBox(width: 8),
+                    ],
+                    _buildQuantityStepper(_borrowQtyController, min: 1, label: "Qty", height: 48),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _inventory.isEmpty ? null : _addBorrowerLog,
+                        icon: const Icon(Icons.assignment_ind, color: Colors.white, size: 18),
+                        label: const Text("Checkout", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _inventory.isEmpty ? Colors.grey : Colors.green,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
-                      ),
-                      child: TextField(
-                        controller: _borrowTopicController,
-                        style: const TextStyle(color: Colors.white, fontSize: 14),
-                        decoration: InputDecoration(
-                          prefixIcon: const Icon(Icons.category_outlined, color: Colors.amberAccent, size: 20),
-                          hintText: "Search topic...",
-                          hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 16),
-                          suffixIcon: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (_borrowTopicController.text.isNotEmpty || _borrowTopicFilter != "All")
-                                IconButton(
-                                  icon: const Icon(Icons.clear, color: Colors.white54, size: 18),
-                                  tooltip: "Reset Topic Filter",
-                                  onPressed: () {
-                                    setState(() {
-                                      _borrowTopicController.clear();
-                                      _borrowTopicFilter = "All";
-                                      _syncSelectedMaterialOnTopicChange();
-                                    });
-                                  },
-                                ),
-                              PopupMenuButton<String>(
-                                icon: const Icon(Icons.arrow_drop_down, color: Colors.white70),
-                                tooltip: "Choose Topic from List",
-                                color: const Color(0xFF203a43),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                onSelected: (val) {
-                                  setState(() {
-                                    if (val == "All") {
-                                      _borrowTopicController.clear();
-                                      _borrowTopicFilter = "All";
-                                    } else {
-                                      _borrowTopicController.text = val;
-                                      _borrowTopicFilter = val;
-                                    }
-                                    _syncSelectedMaterialOnTopicChange();
-                                  });
-                                },
-                                itemBuilder: (context) {
-                                  final topics = ["All", ..._categories];
-                                  return topics.map((t) => PopupMenuItem(
-                                    value: t,
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          t == "All" ? Icons.apps : Icons.folder_outlined,
-                                          size: 18,
-                                          color: t == _borrowTopicFilter ? Colors.amberAccent : Colors.white70,
-                                        ),
-                                        const SizedBox(width: 10),
-                                        Text(
-                                          t == "All" ? "All Topics" : t,
-                                          style: TextStyle(
-                                            color: t == _borrowTopicFilter ? Colors.amberAccent : Colors.white,
-                                            fontWeight: t == _borrowTopicFilter ? FontWeight.bold : FontWeight.normal,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  )).toList();
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                        onChanged: (val) {
-                          setState(() {
-                            _borrowTopicFilter = val.trim().isEmpty ? "All" : val.trim();
-                            _syncSelectedMaterialOnTopicChange();
-                          });
-                        },
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  // 2. Searchable Material Selector / Autocomplete
-                  Expanded(
-                    flex: 4,
-                    child: DropdownMenu<String>(
-                      key: ValueKey("borrow_mat_${_borrowTopicFilter}_${_inventory.length}_$_selectedInventoryItemId"),
-                      controller: _borrowMaterialController,
-                      initialSelection: _selectedInventoryItemId,
-                      expandedInsets: EdgeInsets.zero,
-                      enableFilter: true,
-                      enableSearch: true,
-                      requestFocusOnTap: true,
-                      menuHeight: 350,
-                      hintText: "Search material by name...",
-                      leadingIcon: const Icon(Icons.search, color: Colors.blueAccent, size: 20),
-                      trailingIcon: const Icon(Icons.arrow_drop_down, color: Colors.white70),
-                      selectedTrailingIcon: const Icon(Icons.arrow_drop_up, color: Colors.amberAccent),
-                      textStyle: const TextStyle(color: Colors.white, fontSize: 14),
-                      inputDecorationTheme: InputDecorationTheme(
-                        filled: true,
-                        fillColor: Colors.black26,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Colors.blueAccent, width: 1.5)),
-                        hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
-                      ),
-                      menuStyle: MenuStyle(
-                        backgroundColor: const WidgetStatePropertyAll(Color(0xFF203a43)),
-                        elevation: const WidgetStatePropertyAll(12),
-                        shape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Colors.white12))),
-                      ),
-                      filterCallback: (List<DropdownMenuEntry<String>> entries, String filter) {
-                        final q = filter.trim().toLowerCase();
-                        if (q.isEmpty) return entries;
-                        return entries.where((e) {
-                          final item = _inventory.firstWhere((inv) => inv.id == e.value, orElse: () => MaterialItem("", "", 0, "", ""));
-                          return item.name.toLowerCase().contains(q) || item.category.toLowerCase().contains(q);
-                        }).toList();
-                      },
-                      dropdownMenuEntries: availableMaterials.isEmpty
-                          ? [
-                              const DropdownMenuEntry<String>(
-                                value: "",
-                                label: "No materials available",
-                                enabled: false,
-                              )
-                            ]
-                          : availableMaterials.map((m) {
-                              return DropdownMenuEntry<String>(
-                                value: m.id,
-                                label: m.name,
-                                labelWidget: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 4),
-                                  child: Row(
-                                    children: [
-                                      if (m.imageBytes != null)
-                                        ClipRRect(
-                                          borderRadius: BorderRadius.circular(6),
-                                          child: Image.memory(
-                                            m.imageBytes!,
-                                            width: 34,
-                                            height: 34,
-                                            fit: BoxFit.cover,
-                                            errorBuilder: (_, __, _) => Container(
-                                              width: 34,
-                                              height: 34,
-                                              decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(6)),
-                                              child: const Icon(Icons.hardware, size: 18, color: Colors.white54),
-                                            ),
-                                          ),
-                                        )
-                                      else
-                                        Container(
-                                          width: 34,
-                                          height: 34,
-                                          decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(6)),
-                                          child: const Icon(Icons.hardware, size: 18, color: Colors.white54),
-                                        ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text(
-                                              m.name,
-                                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              m.category,
-                                              style: const TextStyle(color: Colors.amberAccent, fontSize: 11),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                        decoration: BoxDecoration(
-                                          color: m.quantity > 0 ? Colors.green.withValues(alpha: 0.2) : Colors.red.withValues(alpha: 0.2),
-                                          borderRadius: BorderRadius.circular(6),
-                                          border: Border.all(
-                                            color: m.quantity > 0 ? Colors.greenAccent : Colors.redAccent,
-                                            width: 1,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          m.quantity > 0 ? "Stock: ${m.quantity}" : "Out of stock",
-                                          style: TextStyle(
-                                            color: m.quantity > 0 ? Colors.greenAccent : Colors.redAccent,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            }).toList(),
-                      onSelected: (val) {
-                        setState(() {
-                          _selectedInventoryItemId = (val != null && val.isNotEmpty) ? val : null;
-                          if (_selectedInventoryItemId != null) {
-                            final sel = _inventory.firstWhere((m) => m.id == _selectedInventoryItemId, orElse: () => _inventory.first);
-                            _borrowMaterialController.text = sel.name;
-                          }
-                        });
-                      },
-                    ),
-                  ),
-                  if (currentSelectedItem != null) ...[
-                    const SizedBox(width: 10),
-                    Container(
-                      height: 56,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: currentSelectedItem.quantity > 0 ? Colors.green.withValues(alpha: 0.15) : Colors.red.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: currentSelectedItem.quantity > 0 ? Colors.greenAccent.withValues(alpha: 0.5) : Colors.redAccent.withValues(alpha: 0.5),
-                        ),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text("Available", style: TextStyle(color: Colors.white54, fontSize: 10)),
-                          Text(
-                            "${currentSelectedItem.quantity}",
-                            style: TextStyle(
-                              color: currentSelectedItem.quantity > 0 ? Colors.greenAccent : Colors.redAccent,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
                       ),
                     ),
                   ],
-                  const SizedBox(width: 12),
-                  _buildQuantityStepper(_borrowQtyController, min: 1, label: "Qty", height: 56),
-                  const SizedBox(width: 12),
-                  ElevatedButton.icon(
-                    onPressed: _inventory.isEmpty ? null : _addBorrowerLog,
-                    icon: const Icon(Icons.assignment_ind, color: Colors.white),
-                    label: const Text("Checkout", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _inventory.isEmpty ? Colors.grey : Colors.green,
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ] else ...[
+                Row(
+                  children: [
+                    Expanded(flex: 2, child: _buildTextField(_personNameController, "Person's Name")),
+                    const SizedBox(width: 12),
+                    Expanded(flex: 2, child: _buildTextField(_phoneController, "Phone Number")),
+                    const SizedBox(width: 12),
+                    Expanded(flex: 2, child: _buildTextField(_emailController, "Email Address")),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(flex: 3, child: _buildBorrowTopicSelectorWidget(height: 56)),
+                    const SizedBox(width: 12),
+                    Expanded(flex: 4, child: _buildBorrowMaterialSelectorWidget(availableMaterials, height: 56)),
+                    if (currentSelectedItem != null) ...[
+                      const SizedBox(width: 10),
+                      _buildStockBadge(currentSelectedItem, height: 56),
+                    ],
+                    const SizedBox(width: 12),
+                    _buildQuantityStepper(_borrowQtyController, min: 1, label: "Qty", height: 56),
+                    const SizedBox(width: 12),
+                    ElevatedButton.icon(
+                      onPressed: _inventory.isEmpty ? null : _addBorrowerLog,
+                      icon: const Icon(Icons.assignment_ind, color: Colors.white),
+                      label: const Text("Checkout", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _inventory.isEmpty ? Colors.grey : Colors.green,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
-        const SizedBox(height: 24),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                const Text("📋 Borrowers Records", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
-                const SizedBox(width: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(color: Colors.blueAccent.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.blueAccent)),
-                  child: Text("${filteredBorrowers.length} checkouts", style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 12)),
-                ),
-              ],
-            ),
-            SizedBox(
-              width: 360,
-              height: 42,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _borrowHistorySearch.isNotEmpty ? Colors.amberAccent : Colors.white12),
-                ),
-                child: TextField(
-                  controller: _borrowHistorySearchController,
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.search, color: Colors.amberAccent, size: 18),
-                    hintText: "Search records by person, item, topic...",
-                    hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                    suffixIcon: _borrowHistorySearch.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear, color: Colors.white54, size: 16),
-                            onPressed: () {
-                              setState(() {
-                                _borrowHistorySearchController.clear();
-                                _borrowHistorySearch = "";
-                              });
-                            },
-                          )
-                        : null,
-                  ),
-                  onChanged: (val) {
-                    setState(() {
-                      _borrowHistorySearch = val.trim();
-                    });
-                  },
-                ),
+        SizedBox(height: isMobile ? 12 : 24),
+        if (isMobile) ...[
+          Row(
+            children: [
+              const Text("📋 Records", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(color: Colors.blueAccent.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.blueAccent)),
+                child: Text("${filteredBorrowers.length} checkouts", style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 11)),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _buildBorrowHistorySearchContainer(),
+        ] else ...[
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Text("📋 Borrowers Records", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+                  const SizedBox(width: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(color: Colors.blueAccent.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.blueAccent)),
+                    child: Text("${filteredBorrowers.length} checkouts", style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+                  ),
+                ],
+              ),
+              SizedBox(
+                width: 360,
+                child: _buildBorrowHistorySearchContainer(),
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 12),
         Expanded(
           child: GlassContainer(
             padding: const EdgeInsets.all(0),
             child: groupedLogs.isEmpty ? const Center(child: Text("No records.", style: TextStyle(color: Colors.white54, fontSize: 18)))
               : ListView.builder(
-              padding: const EdgeInsets.all(24),
+              padding: EdgeInsets.all(isMobile ? 12 : 24),
               itemCount: groupedLogs.length,
               itemBuilder: (context, index) {
                 String key = groupedLogs.keys.elementAt(index);
@@ -2574,8 +2773,8 @@ class _MainDashboardState extends State<MainDashboard> {
                 BorrowerLog first = userLogs.first;
                 
                 return Container(
-                  margin: const EdgeInsets.only(bottom: 24),
-                  padding: const EdgeInsets.all(20),
+                  margin: EdgeInsets.only(bottom: isMobile ? 14 : 24),
+                  padding: EdgeInsets.all(isMobile ? 14 : 20),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(15),
@@ -2584,72 +2783,181 @@ class _MainDashboardState extends State<MainDashboard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.person, color: Colors.amberAccent, size: 28),
-                          const SizedBox(width: 12),
-                          Text(first.personName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
-                          const Spacer(),
-                          Text("${first.phone}  •  ${first.email}", style: const TextStyle(color: Colors.white70, fontSize: 16)),
-                        ],
-                      ),
-                      const Divider(color: Colors.white24, height: 32),
-                      ...userLogs.map((log) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Row(
+                      if (isMobile) ...[
+                        Row(
                           children: [
-                            Expanded(flex: 3, child: Text(log.itemTaken, style: const TextStyle(fontSize: 17, color: Colors.blueAccent, fontWeight: FontWeight.w600))),
-                            Expanded(flex: 2, child: Text(log.topic, style: const TextStyle(color: Colors.white70, fontSize: 14))),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.black26,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: Colors.white12),
+                            const Icon(Icons.person, color: Colors.amberAccent, size: 24),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                first.personName,
+                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.remove, color: Colors.amberAccent, size: 16),
-                                    tooltip: "Return 1 unit to stock",
-                                    padding: const EdgeInsets.all(4),
-                                    constraints: const BoxConstraints(),
-                                    onPressed: () => _adjustBorrowerQuantity(log, -1),
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                                    child: Text(
-                                      "Qty: ${log.quantityTaken}",
-                                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.greenAccent),
-                                    ),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.add, color: Colors.greenAccent, size: 16),
-                                    tooltip: "Borrow 1 more unit",
-                                    padding: const EdgeInsets.all(4),
-                                    constraints: const BoxConstraints(),
-                                    onPressed: () => _adjustBorrowerQuantity(log, 1),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(flex: 2, child: Text(log.date, style: const TextStyle(color: Colors.white54, fontSize: 14))),
-                            TextButton.icon(
-                              onPressed: () => _returnItemDialog(log),
-                              icon: const Icon(Icons.keyboard_return, color: Colors.amberAccent, size: 18),
-                              label: const Text("Return", style: TextStyle(color: Colors.amberAccent)),
-                            ),
-                            const SizedBox(width: 4),
-                            IconButton(
-                              onPressed: () => _confirmDeleteBorrowerDialog(log),
-                              tooltip: "Delete Checkout Record",
-                              icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
                             ),
                           ],
                         ),
-                      )),
+                        const SizedBox(height: 4),
+                        Text("${first.phone}  •  ${first.email}", style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                      ] else ...[
+                        Row(
+                          children: [
+                            const Icon(Icons.person, color: Colors.amberAccent, size: 28),
+                            const SizedBox(width: 12),
+                            Text(first.personName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+                            const Spacer(),
+                            Text("${first.phone}  •  ${first.email}", style: const TextStyle(color: Colors.white70, fontSize: 16)),
+                          ],
+                        ),
+                      ],
+                      Divider(color: Colors.white24, height: isMobile ? 20 : 32),
+                      ...userLogs.map((log) {
+                        if (isMobile) {
+                          return Container(
+                            margin: const EdgeInsets.symmetric(vertical: 4),
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.black26,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.white10),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        log.itemTaken,
+                                        style: const TextStyle(fontSize: 15, color: Colors.blueAccent, fontWeight: FontWeight.w600),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(6)),
+                                      child: Text(log.topic, style: const TextStyle(color: Colors.amberAccent, fontSize: 11)),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(log.date, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                      decoration: BoxDecoration(color: Colors.black38, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white12)),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(Icons.remove, color: Colors.amberAccent, size: 14),
+                                            padding: const EdgeInsets.all(2),
+                                            constraints: const BoxConstraints(),
+                                            onPressed: () => _adjustBorrowerQuantity(log, -1),
+                                          ),
+                                          Padding(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                                            child: Text(
+                                              "Qty: ${log.quantityTaken}",
+                                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.greenAccent),
+                                            ),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.add, color: Colors.greenAccent, size: 14),
+                                            padding: const EdgeInsets.all(2),
+                                            constraints: const BoxConstraints(),
+                                            onPressed: () => _adjustBorrowerQuantity(log, 1),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    TextButton.icon(
+                                      onPressed: () => _returnItemDialog(log),
+                                      icon: const Icon(Icons.keyboard_return, color: Colors.amberAccent, size: 16),
+                                      label: const Text("Return", style: TextStyle(color: Colors.amberAccent, fontSize: 13)),
+                                      style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    IconButton(
+                                      onPressed: () => _confirmDeleteBorrowerDialog(log),
+                                      tooltip: "Delete Checkout Record",
+                                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 18),
+                                      padding: const EdgeInsets.all(4),
+                                      constraints: const BoxConstraints(),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(
+                            children: [
+                              Expanded(flex: 3, child: Text(log.itemTaken, style: const TextStyle(fontSize: 17, color: Colors.blueAccent, fontWeight: FontWeight.w600))),
+                              Expanded(flex: 2, child: Text(log.topic, style: const TextStyle(color: Colors.white70, fontSize: 14))),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.black26,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.white12),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.remove, color: Colors.amberAccent, size: 16),
+                                      tooltip: "Return 1 unit to stock",
+                                      padding: const EdgeInsets.all(4),
+                                      constraints: const BoxConstraints(),
+                                      onPressed: () => _adjustBorrowerQuantity(log, -1),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                                      child: Text(
+                                        "Qty: ${log.quantityTaken}",
+                                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.greenAccent),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.add, color: Colors.greenAccent, size: 16),
+                                      tooltip: "Borrow 1 more unit",
+                                      padding: const EdgeInsets.all(4),
+                                      constraints: const BoxConstraints(),
+                                      onPressed: () => _adjustBorrowerQuantity(log, 1),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(flex: 2, child: Text(log.date, style: const TextStyle(color: Colors.white54, fontSize: 14))),
+                              TextButton.icon(
+                                onPressed: () => _returnItemDialog(log),
+                                icon: const Icon(Icons.keyboard_return, color: Colors.amberAccent, size: 18),
+                                label: const Text("Return", style: TextStyle(color: Colors.amberAccent)),
+                              ),
+                              const SizedBox(width: 4),
+                              IconButton(
+                                onPressed: () => _confirmDeleteBorrowerDialog(log),
+                                tooltip: "Delete Checkout Record",
+                                icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
                     ],
                   ),
                 );
