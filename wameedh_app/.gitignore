@@ -52,3 +52,43 @@ app.*.map.json
 
 # Screenshots / generated assets
 flutter_*.png
+
+# Release artifacts
+release-artifacts/
+*.apk
+*.aab
+*.zip
+*.tar.gz
+*.tgz
+
+# Local signing files
+*.jks
+*.keystore
+*.pfx
+android/key.properties
+android/local.properties
+
+# Ignore generated desktop build outputs
+wameedh_app/build/
+
+# Ignore local packaging directories
+out/
+release/
+releases/
+packaging/
+build-artifacts/
+site/
+web-build/
+
+# Keep repo root minimal
+feedback/
+dist/
+
+# Allow workflow files to stay tracked
+!.github/
+!.github/workflows/
+!.github/workflows/*.yml
+
+# Keep project scripts under version control
+!scripts/
+!scripts/*.sh
