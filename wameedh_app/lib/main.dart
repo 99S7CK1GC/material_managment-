@@ -166,7 +166,9 @@ class _MainDashboardState extends State<MainDashboard> {
   String? _selectedInventoryItemId;
   String? _selectedImageBase64;
   
-  bool _isCardView = false;
+  bool _isCardView = true;
+  bool _isAddMaterialExpanded = false;
+  bool _isCheckoutFormExpanded = true;
   bool _isLoading = true;
   String? _errorMessage;
   bool _tablesInitialized = false;
@@ -2511,7 +2513,7 @@ class _MainDashboardState extends State<MainDashboard> {
       return matchesSearchName && matchesTopic;
     }).toList();
 
-    return Column(
+    final inventoryContent = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
@@ -2597,45 +2599,75 @@ class _MainDashboardState extends State<MainDashboard> {
             ],
           ),
         SizedBox(height: isMobile ? 12 : 20),
-        GlassContainer(
-          padding: EdgeInsets.all(isMobile ? 12 : 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (isMobile) ...[
-                Row(
-                  children: [
-                    _buildPhotoPickerWidget(size: 48),
-                    const SizedBox(width: 10),
-                    Expanded(child: _buildTextField(_matNameController, "Material Name (e.g. ESP32)")),
-                  ],
+        if (isMobile)
+          GlassContainer(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                InkWell(
+                  onTap: () => setState(() => _isAddMaterialExpanded = !_isAddMaterialExpanded),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(_isAddMaterialExpanded ? Icons.remove_circle_outline : Icons.add_circle_outline, color: Colors.blueAccent, size: 20),
+                            const SizedBox(width: 8),
+                            const Text("Add New Material", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                          ],
+                        ),
+                        Icon(_isAddMaterialExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: Colors.amberAccent),
+                      ],
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    _buildQuantityStepper(_matQtyController, min: 1, label: "Qty", height: 48),
-                    const SizedBox(width: 8),
-                    Expanded(child: _buildCategoryDropdownRow(height: 48)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(child: _buildTextField(_matDescController, "Description (Optional)")),
-                    const SizedBox(width: 8),
-                    ElevatedButton.icon(
+                if (_isAddMaterialExpanded) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      _buildPhotoPickerWidget(size: 48),
+                      const SizedBox(width: 10),
+                      Expanded(child: _buildTextField(_matNameController, "Material Name (e.g. ESP32)")),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      _buildQuantityStepper(_matQtyController, min: 1, label: "Qty", height: 48),
+                      const SizedBox(width: 8),
+                      Expanded(child: _buildCategoryDropdownRow(height: 48)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  _buildTextField(_matDescController, "Description (Optional)"),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 44,
+                    child: ElevatedButton.icon(
                       onPressed: _addInventoryItem,
-                      icon: const Icon(Icons.add, color: Colors.white, size: 18),
-                      label: const Text("Add", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      icon: const Icon(Icons.add, color: Colors.white, size: 20),
+                      label: const Text("Add Material to Inventory", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.blueAccent,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
                     ),
-                  ],
-                ),
-              ] else ...[
+                  ),
+                ],
+              ],
+            ),
+          )
+        else
+          GlassContainer(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Row(
                   children: [
                     _buildPhotoPickerWidget(size: 56),
@@ -2663,138 +2695,151 @@ class _MainDashboardState extends State<MainDashboard> {
                   ],
                 ),
               ],
-            ],
+            ),
           ),
-        ),
         SizedBox(height: isMobile ? 12 : 24),
-        Expanded(
-          child: _isCardView
-              ? _buildInventoryCardsView(filteredInventory)
-              : _buildInventoryTableView(filteredInventory, isMobile: isMobile),
-        ),
+        if (isMobile)
+          _isCardView
+              ? _buildInventoryCardsView(filteredInventory, isMobile: true)
+              : _buildInventoryTableView(filteredInventory, isMobile: true)
+        else
+          Expanded(
+            child: _isCardView
+                ? _buildInventoryCardsView(filteredInventory, isMobile: false)
+                : _buildInventoryTableView(filteredInventory, isMobile: false),
+          ),
       ],
     );
+
+    if (isMobile) {
+      return SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+        padding: const EdgeInsets.only(bottom: 40),
+        child: inventoryContent,
+      );
+    }
+
+    return inventoryContent;
   }
 
   Widget _buildInventoryTableView(List<MaterialItem> items, {bool isMobile = false}) {
-    Widget tableContent = Column(
-      children: [
-        Container(
-          padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 24, vertical: 14),
-          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.2)))),
-          child: Row(
-            children: const [
-              Expanded(flex: 3, child: Text("Material Name", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.white))),
-              Expanded(flex: 2, child: Text("Topic", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.amberAccent))),
-              Expanded(flex: 1, child: Text("Qty in Stock", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.greenAccent))),
-              Expanded(flex: 2, child: Text("Date", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.white))),
-              SizedBox(width: 96), 
-            ],
-          ),
-        ),
-        Expanded(
-          child: items.isEmpty
-              ? const Center(child: Text("No items found.", style: TextStyle(color: Colors.white54, fontSize: 18)))
-              : ListView.builder(
-                  physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-                  itemCount: items.length,
-                  itemBuilder: (context, index) {
-                    final item = items[index];
-                    final hasDesc = item.description != null && item.description!.trim().isNotEmpty;
-                    return Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () => _showMaterialDetailsDialog(item),
-                          hoverColor: Colors.white.withValues(alpha: 0.04),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.05)))),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  flex: 3,
-                                  child: Row(
-                                    children: [
-                                      Tooltip(
-                                        message: "Click to view full component card",
-                                        child: Container(
-                                          width: 44,
-                                          height: 44,
-                                          decoration: BoxDecoration(
-                                            color: Colors.white10,
-                                            borderRadius: BorderRadius.circular(8),
-                                            border: Border.all(color: Colors.white24),
+    final listContent = items.isEmpty
+        ? const Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(child: Text("No items found.", style: TextStyle(color: Colors.white54, fontSize: 16))),
+          )
+        : ListView.builder(
+            shrinkWrap: isMobile,
+            physics: isMobile ? const NeverScrollableScrollPhysics() : const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+            itemCount: items.length,
+            itemBuilder: (context, index) {
+              final item = items[index];
+              final hasDesc = item.description != null && item.description!.trim().isNotEmpty;
+              return Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => _showMaterialDetailsDialog(item),
+                  hoverColor: Colors.white.withValues(alpha: 0.04),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.05)))),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: Row(
+                            children: [
+                              Tooltip(
+                                message: "Click to view full component card",
+                                child: Container(
+                                  width: 44,
+                                  height: 44,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white10,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.white24),
+                                  ),
+                                  child: item.imageBytes != null
+                                      ? ClipRRect(
+                                          borderRadius: BorderRadius.circular(7),
+                                          child: Image.memory(
+                                            item.imageBytes!,
+                                            cacheWidth: 100,
+                                            width: 44,
+                                            height: 44,
+                                            fit: BoxFit.cover,
+                                            filterQuality: FilterQuality.low,
+                                            errorBuilder: (_, __, _) => const Icon(Icons.broken_image, color: Colors.white38, size: 20),
                                           ),
-                                          child: item.imageBytes != null
-                                              ? ClipRRect(
-                                                  borderRadius: BorderRadius.circular(7),
-                                                  child: Image.memory(
-                                                    item.imageBytes!,
-                                                    cacheWidth: 100,
-                                                    width: 44,
-                                                    height: 44,
-                                                    fit: BoxFit.cover,
-                                                    filterQuality: FilterQuality.low,
-                                                    errorBuilder: (_, __, _) => const Icon(Icons.broken_image, color: Colors.white38, size: 20),
-                                                  ),
-                                                )
-                                              : const Icon(Icons.inventory_2_outlined, color: Colors.white30, size: 22),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Text(
-                                              item.name,
-                                              style: const TextStyle(fontSize: 17, color: Colors.white, fontWeight: FontWeight.w600),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            if (hasDesc) ...[
-                                              const SizedBox(height: 3),
-                                              Text(
-                                                item.description!.trim(),
-                                                style: const TextStyle(fontSize: 12, color: Colors.white60),
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ],
-                                          ],
-                                        ),
+                                        )
+                                      : const Icon(Icons.inventory_2_outlined, color: Colors.white30, size: 22),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      item.name,
+                                      style: const TextStyle(fontSize: 17, color: Colors.white, fontWeight: FontWeight.w600),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    if (hasDesc) ...[
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        item.description!.trim(),
+                                        style: const TextStyle(fontSize: 12, color: Colors.white60),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ],
-                                  ),
-                                ),
-                                Expanded(flex: 2, child: Align(alignment: Alignment.centerLeft, child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)), child: Text(item.category, style: const TextStyle(color: Colors.amberAccent, fontSize: 14))))),
-                                Expanded(flex: 1, child: Text("${item.quantity}", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.greenAccent))),
-                                Expanded(flex: 2, child: Text(item.date, style: const TextStyle(color: Colors.white70, fontSize: 14))),
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      tooltip: "Edit Material",
-                                      icon: const Icon(Icons.edit_outlined, color: Colors.blueAccent),
-                                      onPressed: () => _editInventoryItemDialog(item),
-                                    ),
-                                    IconButton(
-                                      tooltip: "Delete Material",
-                                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                                      onPressed: () => _confirmDeleteDialog(item),
-                                    ),
                                   ],
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
-                      );
-                    },
+                        Expanded(flex: 2, child: Align(alignment: Alignment.centerLeft, child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)), child: Text(item.category, style: const TextStyle(color: Colors.amberAccent, fontSize: 14))))),
+                        Expanded(flex: 1, child: Text("${item.quantity}", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.greenAccent))),
+                        Expanded(flex: 2, child: Text(item.date, style: const TextStyle(color: Colors.white70, fontSize: 14))),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: "Edit Material",
+                              icon: const Icon(Icons.edit_outlined, color: Colors.blueAccent),
+                              onPressed: () => _editInventoryItemDialog(item),
+                            ),
+                            IconButton(
+                              tooltip: "Delete Material",
+                              icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                              onPressed: () => _confirmDeleteDialog(item),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-          ),
+                ),
+              );
+            },
+          );
+
+    final tableHeader = Container(
+      padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 24, vertical: 14),
+      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.2)))),
+      child: Row(
+        children: const [
+          Expanded(flex: 3, child: Text("Material Name", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.white))),
+          Expanded(flex: 2, child: Text("Topic", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.amberAccent))),
+          Expanded(flex: 1, child: Text("Qty in Stock", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.greenAccent))),
+          Expanded(flex: 2, child: Text("Date", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.white))),
+          SizedBox(width: 96), 
         ],
-      );
+      ),
+    );
 
     if (isMobile) {
       return GlassContainer(
@@ -2804,7 +2849,12 @@ class _MainDashboardState extends State<MainDashboard> {
           physics: const BouncingScrollPhysics(),
           child: SizedBox(
             width: 720,
-            child: tableContent,
+            child: Column(
+              children: [
+                tableHeader,
+                listContent,
+              ],
+            ),
           ),
         ),
       );
@@ -2812,25 +2862,31 @@ class _MainDashboardState extends State<MainDashboard> {
 
     return GlassContainer(
       padding: const EdgeInsets.all(0),
-      child: tableContent,
+      child: Column(
+        children: [
+          tableHeader,
+          Expanded(child: listContent),
+        ],
+      ),
     );
   }
 
-  Widget _buildInventoryCardsView(List<MaterialItem> items) {
+  Widget _buildInventoryCardsView(List<MaterialItem> items, {bool isMobile = false}) {
     if (items.isEmpty) {
-      return GlassContainer(
-        padding: const EdgeInsets.all(0),
-        child: const Center(child: Text("No items found.", style: TextStyle(color: Colors.white54, fontSize: 18))),
+      return const GlassContainer(
+        padding: EdgeInsets.all(32),
+        child: Center(child: Text("No items found.", style: TextStyle(color: Colors.white54, fontSize: 16))),
       );
     }
 
     return GridView.builder(
-      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 310,
-        mainAxisSpacing: 16,
-        crossAxisSpacing: 16,
-        childAspectRatio: 0.82,
+      shrinkWrap: isMobile,
+      physics: isMobile ? const NeverScrollableScrollPhysics() : const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: isMobile ? 220 : 310,
+        mainAxisSpacing: 14,
+        crossAxisSpacing: 14,
+        childAspectRatio: isMobile ? 0.70 : 0.82,
       ),
       itemCount: items.length,
       itemBuilder: (context, index) => _buildMaterialCard(items[index]),
@@ -3302,92 +3358,323 @@ class _MainDashboardState extends State<MainDashboard> {
       groupedLogs[key]!.add(log);
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text("📝 Checkout Log", style: TextStyle(fontSize: isMobile ? 20 : 32, fontWeight: FontWeight.bold, color: Colors.white)),
-        SizedBox(height: isMobile ? 12 : 24),
-        GlassContainer(
-          padding: EdgeInsets.all(isMobile ? 12 : 24),
-          child: Column(
-            children: [
-              if (isMobile) ...[
-                _buildTextField(_personNameController, "Person's Name"),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(child: _buildTextField(_phoneController, "Phone Number")),
-                    const SizedBox(width: 8),
-                    Expanded(child: _buildTextField(_emailController, "Email Address")),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                _buildBorrowTopicSelectorWidget(height: 48),
-                const SizedBox(height: 8),
-                _buildBorrowMaterialSelectorWidget(availableMaterials, height: 48),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    if (currentSelectedItem != null) ...[
-                      _buildStockBadge(currentSelectedItem, height: 48),
+    Widget buildLogsList() {
+      if (groupedLogs.isEmpty) {
+        return const GlassContainer(
+          padding: EdgeInsets.all(32),
+          child: Center(child: Text("No checkout records found.", style: TextStyle(color: Colors.white54, fontSize: 16))),
+        );
+      }
+
+      return ListView.builder(
+        shrinkWrap: isMobile,
+        physics: isMobile ? const NeverScrollableScrollPhysics() : const BouncingScrollPhysics(),
+        padding: EdgeInsets.all(isMobile ? 0 : 24),
+        itemCount: groupedLogs.length,
+        itemBuilder: (context, index) {
+          String key = groupedLogs.keys.elementAt(index);
+          List<BorrowerLog> userLogs = groupedLogs[key]!;
+          BorrowerLog first = userLogs.first;
+
+          return Container(
+            margin: EdgeInsets.only(bottom: isMobile ? 14 : 24),
+            padding: EdgeInsets.all(isMobile ? 14 : 20),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (isMobile) ...[
+                  Row(
+                    children: [
+                      const Icon(Icons.person, color: Colors.amberAccent, size: 24),
                       const SizedBox(width: 8),
-                    ],
-                    _buildQuantityStepper(_borrowQtyController, min: 1, label: "Qty", height: 48),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: _inventory.isEmpty ? null : _addBorrowerLog,
-                        icon: const Icon(Icons.assignment_ind, color: Colors.white, size: 18),
-                        label: const Text("Checkout", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _inventory.isEmpty ? Colors.grey : Colors.green,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      Expanded(
+                        child: Text(
+                          first.personName,
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ] else ...[
-                Row(
-                  children: [
-                    Expanded(flex: 2, child: _buildTextField(_personNameController, "Person's Name")),
-                    const SizedBox(width: 12),
-                    Expanded(flex: 2, child: _buildTextField(_phoneController, "Phone Number")),
-                    const SizedBox(width: 12),
-                    Expanded(flex: 2, child: _buildTextField(_emailController, "Email Address")),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(flex: 3, child: _buildBorrowTopicSelectorWidget(height: 56)),
-                    const SizedBox(width: 12),
-                    Expanded(flex: 4, child: _buildBorrowMaterialSelectorWidget(availableMaterials, height: 56)),
-                    if (currentSelectedItem != null) ...[
-                      const SizedBox(width: 10),
-                      _buildStockBadge(currentSelectedItem, height: 56),
                     ],
-                    const SizedBox(width: 12),
-                    _buildQuantityStepper(_borrowQtyController, min: 1, label: "Qty", height: 56),
-                    const SizedBox(width: 12),
-                    ElevatedButton.icon(
+                  ),
+                  const SizedBox(height: 4),
+                  Text("${first.phone}  •  ${first.email}", style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                ] else ...[
+                  Row(
+                    children: [
+                      const Icon(Icons.person, color: Colors.amberAccent, size: 28),
+                      const SizedBox(width: 12),
+                      Text(first.personName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+                      const Spacer(),
+                      Text("${first.phone}  •  ${first.email}", style: const TextStyle(color: Colors.white70, fontSize: 16)),
+                    ],
+                  ),
+                ],
+                Divider(color: Colors.white24, height: isMobile ? 20 : 32),
+                ...userLogs.map((log) {
+                  if (isMobile) {
+                    return Container(
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.black26,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white10),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  log.itemTaken,
+                                  style: const TextStyle(fontSize: 15, color: Colors.blueAccent, fontWeight: FontWeight.w600),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(6)),
+                                child: Text(log.topic, style: const TextStyle(color: Colors.amberAccent, fontSize: 11)),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(log.date, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                decoration: BoxDecoration(color: Colors.black38, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white12)),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.remove, color: Colors.amberAccent, size: 14),
+                                      padding: const EdgeInsets.all(2),
+                                      constraints: const BoxConstraints(),
+                                      onPressed: () => _adjustBorrowerQuantity(log, -1),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                                      child: Text(
+                                        "Qty: ${log.quantityTaken}",
+                                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.greenAccent),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.add, color: Colors.greenAccent, size: 14),
+                                      padding: const EdgeInsets.all(2),
+                                      constraints: const BoxConstraints(),
+                                      onPressed: () => _adjustBorrowerQuantity(log, 1),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton.icon(
+                                onPressed: () => _returnItemDialog(log),
+                                icon: const Icon(Icons.keyboard_return, color: Colors.amberAccent, size: 16),
+                                label: const Text("Return", style: TextStyle(color: Colors.amberAccent, fontSize: 13)),
+                                style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                onPressed: () => _confirmDeleteBorrowerDialog(log),
+                                tooltip: "Delete Checkout Record",
+                                icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 18),
+                                padding: const EdgeInsets.all(4),
+                                constraints: const BoxConstraints(),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      children: [
+                        Expanded(flex: 3, child: Text(log.itemTaken, style: const TextStyle(fontSize: 17, color: Colors.blueAccent, fontWeight: FontWeight.w600))),
+                        Expanded(flex: 2, child: Text(log.topic, style: const TextStyle(color: Colors.white70, fontSize: 14))),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.black26,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.white12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.remove, color: Colors.amberAccent, size: 16),
+                                tooltip: "Return 1 unit to stock",
+                                padding: const EdgeInsets.all(4),
+                                constraints: const BoxConstraints(),
+                                onPressed: () => _adjustBorrowerQuantity(log, -1),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                child: Text(
+                                  "Qty: ${log.quantityTaken}",
+                                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.greenAccent),
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.add, color: Colors.greenAccent, size: 16),
+                                tooltip: "Borrow 1 more unit",
+                                padding: const EdgeInsets.all(4),
+                                constraints: const BoxConstraints(),
+                                onPressed: () => _adjustBorrowerQuantity(log, 1),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(flex: 2, child: Text(log.date, style: const TextStyle(color: Colors.white54, fontSize: 14))),
+                        TextButton.icon(
+                          onPressed: () => _returnItemDialog(log),
+                          icon: const Icon(Icons.keyboard_return, color: Colors.amberAccent, size: 18),
+                          label: const Text("Return", style: TextStyle(color: Colors.amberAccent)),
+                        ),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          onPressed: () => _confirmDeleteBorrowerDialog(log),
+                          tooltip: "Delete Checkout Record",
+                          icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            ),
+          );
+        },
+      );
+    }
+
+    final borrowersContent = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(isMobile ? "📝 Checkout Log" : "📝 Equipment Checkout Log", style: TextStyle(fontSize: isMobile ? 20 : 32, fontWeight: FontWeight.bold, color: Colors.white)),
+            if (isMobile)
+              TextButton.icon(
+                onPressed: () => setState(() => _isCheckoutFormExpanded = !_isCheckoutFormExpanded),
+                icon: Icon(_isCheckoutFormExpanded ? Icons.keyboard_arrow_up : Icons.add_circle_outline, color: Colors.amberAccent, size: 18),
+                label: Text(
+                  _isCheckoutFormExpanded ? "Hide Form" : "New Checkout",
+                  style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+              ),
+          ],
+        ),
+        if (!isMobile || _isCheckoutFormExpanded) ...[
+          SizedBox(height: isMobile ? 10 : 20),
+          GlassContainer(
+            padding: EdgeInsets.all(isMobile ? 14 : 24),
+            child: Column(
+              children: [
+                if (isMobile) ...[
+                  _buildTextField(_personNameController, "Person's Name"),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(child: _buildTextField(_phoneController, "Phone Number")),
+                      const SizedBox(width: 8),
+                      Expanded(child: _buildTextField(_emailController, "Email Address")),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  _buildBorrowTopicSelectorWidget(height: 48),
+                  const SizedBox(height: 8),
+                  _buildBorrowMaterialSelectorWidget(availableMaterials, height: 48),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      if (currentSelectedItem != null) ...[
+                        Expanded(flex: 3, child: _buildStockBadge(currentSelectedItem, height: 48)),
+                        const SizedBox(width: 8),
+                      ],
+                      Expanded(
+                        flex: 4,
+                        child: _buildQuantityStepper(_borrowQtyController, min: 1, label: "Qty to borrow", height: 48),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton.icon(
                       onPressed: _inventory.isEmpty ? null : _addBorrowerLog,
-                      icon: const Icon(Icons.assignment_ind, color: Colors.white),
-                      label: const Text("Checkout", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      icon: const Icon(Icons.assignment_ind, color: Colors.white, size: 20),
+                      label: const Text("Complete Checkout", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _inventory.isEmpty ? Colors.grey : Colors.green,
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ] else ...[
+                  Row(
+                    children: [
+                      Expanded(flex: 2, child: _buildTextField(_personNameController, "Person's Name")),
+                      const SizedBox(width: 12),
+                      Expanded(flex: 2, child: _buildTextField(_phoneController, "Phone Number")),
+                      const SizedBox(width: 12),
+                      Expanded(flex: 2, child: _buildTextField(_emailController, "Email Address")),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(flex: 3, child: _buildBorrowTopicSelectorWidget(height: 56)),
+                      const SizedBox(width: 12),
+                      Expanded(flex: 4, child: _buildBorrowMaterialSelectorWidget(availableMaterials, height: 56)),
+                      if (currentSelectedItem != null) ...[
+                        const SizedBox(width: 10),
+                        _buildStockBadge(currentSelectedItem, height: 56),
+                      ],
+                      const SizedBox(width: 12),
+                      _buildQuantityStepper(_borrowQtyController, min: 1, label: "Qty", height: 56),
+                      const SizedBox(width: 12),
+                      ElevatedButton.icon(
+                        onPressed: _inventory.isEmpty ? null : _addBorrowerLog,
+                        icon: const Icon(Icons.assignment_ind, color: Colors.white),
+                        label: const Text("Checkout", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _inventory.isEmpty ? Colors.grey : Colors.green,
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
-        ),
+        ],
         SizedBox(height: isMobile ? 12 : 24),
         if (isMobile) ...[
           Row(
@@ -3426,213 +3713,27 @@ class _MainDashboardState extends State<MainDashboard> {
           ),
         ],
         const SizedBox(height: 12),
-        Expanded(
-          child: GlassContainer(
-            padding: const EdgeInsets.all(0),
-            child: groupedLogs.isEmpty ? const Center(child: Text("No records.", style: TextStyle(color: Colors.white54, fontSize: 18)))
-              : ListView.builder(
-              padding: EdgeInsets.all(isMobile ? 12 : 24),
-              itemCount: groupedLogs.length,
-              itemBuilder: (context, index) {
-                String key = groupedLogs.keys.elementAt(index);
-                List<BorrowerLog> userLogs = groupedLogs[key]!;
-                BorrowerLog first = userLogs.first;
-                
-                return Container(
-                  margin: EdgeInsets.only(bottom: isMobile ? 14 : 24),
-                  padding: EdgeInsets.all(isMobile ? 14 : 20),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(15),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (isMobile) ...[
-                        Row(
-                          children: [
-                            const Icon(Icons.person, color: Colors.amberAccent, size: 24),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                first.personName,
-                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Text("${first.phone}  •  ${first.email}", style: const TextStyle(color: Colors.white70, fontSize: 13)),
-                      ] else ...[
-                        Row(
-                          children: [
-                            const Icon(Icons.person, color: Colors.amberAccent, size: 28),
-                            const SizedBox(width: 12),
-                            Text(first.personName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
-                            const Spacer(),
-                            Text("${first.phone}  •  ${first.email}", style: const TextStyle(color: Colors.white70, fontSize: 16)),
-                          ],
-                        ),
-                      ],
-                      Divider(color: Colors.white24, height: isMobile ? 20 : 32),
-                      ...userLogs.map((log) {
-                        if (isMobile) {
-                          return Container(
-                            margin: const EdgeInsets.symmetric(vertical: 4),
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: Colors.black26,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: Colors.white10),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        log.itemTaken,
-                                        style: const TextStyle(fontSize: 15, color: Colors.blueAccent, fontWeight: FontWeight.w600),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(6)),
-                                      child: Text(log.topic, style: const TextStyle(color: Colors.amberAccent, fontSize: 11)),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 6),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(log.date, style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                      decoration: BoxDecoration(color: Colors.black38, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white12)),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          IconButton(
-                                            icon: const Icon(Icons.remove, color: Colors.amberAccent, size: 14),
-                                            padding: const EdgeInsets.all(2),
-                                            constraints: const BoxConstraints(),
-                                            onPressed: () => _adjustBorrowerQuantity(log, -1),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.symmetric(horizontal: 6),
-                                            child: Text(
-                                              "Qty: ${log.quantityTaken}",
-                                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.greenAccent),
-                                            ),
-                                          ),
-                                          IconButton(
-                                            icon: const Icon(Icons.add, color: Colors.greenAccent, size: 14),
-                                            padding: const EdgeInsets.all(2),
-                                            constraints: const BoxConstraints(),
-                                            onPressed: () => _adjustBorrowerQuantity(log, 1),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 4),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.end,
-                                  children: [
-                                    TextButton.icon(
-                                      onPressed: () => _returnItemDialog(log),
-                                      icon: const Icon(Icons.keyboard_return, color: Colors.amberAccent, size: 16),
-                                      label: const Text("Return", style: TextStyle(color: Colors.amberAccent, fontSize: 13)),
-                                      style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    IconButton(
-                                      onPressed: () => _confirmDeleteBorrowerDialog(log),
-                                      tooltip: "Delete Checkout Record",
-                                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 18),
-                                      padding: const EdgeInsets.all(4),
-                                      constraints: const BoxConstraints(),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          );
-                        }
-
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          child: Row(
-                            children: [
-                              Expanded(flex: 3, child: Text(log.itemTaken, style: const TextStyle(fontSize: 17, color: Colors.blueAccent, fontWeight: FontWeight.w600))),
-                              Expanded(flex: 2, child: Text(log.topic, style: const TextStyle(color: Colors.white70, fontSize: 14))),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.black26,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.white12),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.remove, color: Colors.amberAccent, size: 16),
-                                      tooltip: "Return 1 unit to stock",
-                                      padding: const EdgeInsets.all(4),
-                                      constraints: const BoxConstraints(),
-                                      onPressed: () => _adjustBorrowerQuantity(log, -1),
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                                      child: Text(
-                                        "Qty: ${log.quantityTaken}",
-                                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.greenAccent),
-                                      ),
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.add, color: Colors.greenAccent, size: 16),
-                                      tooltip: "Borrow 1 more unit",
-                                      padding: const EdgeInsets.all(4),
-                                      constraints: const BoxConstraints(),
-                                      onPressed: () => _adjustBorrowerQuantity(log, 1),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(flex: 2, child: Text(log.date, style: const TextStyle(color: Colors.white54, fontSize: 14))),
-                              TextButton.icon(
-                                onPressed: () => _returnItemDialog(log),
-                                icon: const Icon(Icons.keyboard_return, color: Colors.amberAccent, size: 18),
-                                label: const Text("Return", style: TextStyle(color: Colors.amberAccent)),
-                              ),
-                              const SizedBox(width: 4),
-                              IconButton(
-                                onPressed: () => _confirmDeleteBorrowerDialog(log),
-                                tooltip: "Delete Checkout Record",
-                                icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
-                    ],
-                  ),
-                );
-              },
+        if (isMobile)
+          buildLogsList()
+        else
+          Expanded(
+            child: GlassContainer(
+              padding: const EdgeInsets.all(0),
+              child: buildLogsList(),
             ),
           ),
-        ),
       ],
     );
+
+    if (isMobile) {
+      return SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+        padding: const EdgeInsets.only(bottom: 40),
+        child: borrowersContent,
+      );
+    }
+
+    return borrowersContent;
   }
 
   Widget _buildTextField(TextEditingController controller, String label, {bool isNumber = false}) {
