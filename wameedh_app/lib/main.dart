@@ -16,15 +16,47 @@ late Pool dbPool;
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  await dotenv.load(fileName: ".env");
-  
+  String host = 'ep-divine-tree-b5uupalq-pooler.c-7.us-east-2.aws.neon.tech';
+  String database = 'neondb';
+  String username = 'neondb_owner';
+  String password = 'npg_cNKL5vGwQ9st';
+  int port = 5432;
+
+  try {
+    await dotenv.load(fileName: ".env");
+    final dbUrl = dotenv.env['DATABASE_URL'];
+    if (dbUrl != null && dbUrl.trim().isNotEmpty) {
+      final uri = Uri.parse(dbUrl.trim());
+      if (uri.host.isNotEmpty) host = uri.host;
+      if (uri.pathSegments.isNotEmpty) database = uri.pathSegments.first;
+      if (uri.userInfo.isNotEmpty) {
+        final parts = uri.userInfo.split(':');
+        username = parts[0];
+        if (parts.length > 1) {
+          password = Uri.decodeComponent(parts.sublist(1).join(':'));
+        }
+      }
+      if (uri.hasPort && uri.port != 0) {
+        port = uri.port;
+      }
+    } else {
+      host = dotenv.env['DB_HOST'] ?? host;
+      database = dotenv.env['DB_NAME'] ?? database;
+      username = dotenv.env['DB_USER'] ?? username;
+      password = dotenv.env['DB_PASSWORD'] ?? password;
+      port = int.tryParse(dotenv.env['DB_PORT'] ?? '') ?? port;
+    }
+  } catch (e) {
+    debugPrint('Could not load .env file, using default database config: $e');
+  }
+
   dbPool = Pool.withEndpoints([
     Endpoint(
-      host: dotenv.env['DB_HOST']!,
-      database: dotenv.env['DB_NAME']!,
-      username: dotenv.env['DB_USER']!,
-      password: dotenv.env['DB_PASSWORD']!,
-      port: int.parse(dotenv.env['DB_PORT'] ?? '5432'),
+      host: host,
+      database: database,
+      username: username,
+      password: password,
+      port: port,
     )
   ], settings: const PoolSettings(maxConnectionCount: 5));
 
