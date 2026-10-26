@@ -39,6 +39,10 @@ dependencies:
   postgres: ^3.5.20
   flutter_dotenv: ^6.0.1
   file_picker: ^13.1.0
+  pdf: ^3.13.1
+  printing: ^5.15.1
+  path_provider: ^2.1.6
+  share_plus: ^13.3.1
 
 dev_dependencies:
   flutter_test:

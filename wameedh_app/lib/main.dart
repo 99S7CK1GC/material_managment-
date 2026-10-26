@@ -1,10 +1,15 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:postgres/postgres.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:share_plus/share_plus.dart';
 
 late Pool dbPool;
 
@@ -564,6 +569,527 @@ class _MainDashboardState extends State<MainDashboard> {
         );
       },
     );
+  }
+
+  void _showExportInventoryDialog(List<MaterialItem> currentFiltered) {
+    bool exportAll = true;
+    bool isExporting = false;
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final itemsToExport = exportAll ? _inventory : currentFiltered;
+          final totalUnits = itemsToExport.fold<int>(0, (sum, m) => sum + m.quantity);
+
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            child: Container(
+              width: 480,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF162a35), Color(0xFF1f3844), Color(0xFF0d1e25)],
+                ),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.amberAccent.withValues(alpha: 0.4), width: 1.5),
+                boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 25, offset: Offset(0, 10))],
+              ),
+              child: Stack(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.amberAccent.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.amberAccent.withValues(alpha: 0.3)),
+                              ),
+                              child: const Icon(Icons.file_download_outlined, color: Colors.amberAccent, size: 26),
+                            ),
+                            const SizedBox(width: 14),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    "Export Inventory List",
+                                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                                  ),
+                                  SizedBox(height: 2),
+                                  Text(
+                                    "Download components table as Excel or PDF",
+                                    style: TextStyle(color: Colors.white60, fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 18),
+                        const Divider(color: Colors.white12, height: 1),
+                        const SizedBox(height: 14),
+
+                        if (currentFiltered.length != _inventory.length) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.black26,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.white12),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.filter_list, color: Colors.amberAccent, size: 18),
+                                const SizedBox(width: 8),
+                                const Text("Items to export:", style: TextStyle(color: Colors.white70, fontSize: 13)),
+                                const Spacer(),
+                                DropdownButton<bool>(
+                                  value: exportAll,
+                                  dropdownColor: const Color(0xFF1f3844),
+                                  underline: const SizedBox(),
+                                  style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                                  items: [
+                                    DropdownMenuItem(value: true, child: Text("All (${_inventory.length} items)")),
+                                    DropdownMenuItem(value: false, child: Text("Filtered (${currentFiltered.length} items)")),
+                                  ],
+                                  onChanged: (val) {
+                                    if (val != null) setDialogState(() => exportAll = val);
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                        ],
+
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.info_outline, color: Colors.blueAccent, size: 16),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  "Exporting ${itemsToExport.length} materials ($totalUnits units in stock)",
+                                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+
+                        if (isExporting)
+                          const Center(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(vertical: 20),
+                              child: Column(
+                                children: [
+                                  CircularProgressIndicator(color: Colors.amberAccent),
+                                  SizedBox(height: 12),
+                                  Text("Generating file, please wait...", style: TextStyle(color: Colors.white70, fontSize: 13)),
+                                ],
+                              ),
+                            ),
+                          )
+                        else
+                          Column(
+                            children: [
+                              Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(12),
+                                  onTap: () async {
+                                    setDialogState(() => isExporting = true);
+                                    await _exportInventoryToCsv(itemsToExport);
+                                    if (dialogCtx.mounted) Navigator.pop(dialogCtx);
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF107C41).withValues(alpha: 0.25),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: const Color(0xFF107C41).withValues(alpha: 0.7)),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(color: const Color(0xFF107C41), borderRadius: BorderRadius.circular(8)),
+                                          child: const Icon(Icons.table_chart, color: Colors.white, size: 22),
+                                        ),
+                                        const SizedBox(width: 14),
+                                        const Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                "Download as Excel (.csv)",
+                                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                                              ),
+                                              SizedBox(height: 2),
+                                              Text(
+                                                "Opens directly in Microsoft Excel, Google Sheets, Calc",
+                                                style: TextStyle(color: Colors.white60, fontSize: 11),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 14),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+
+                              Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(12),
+                                  onTap: () async {
+                                    setDialogState(() => isExporting = true);
+                                    await _exportInventoryToPdf(itemsToExport);
+                                    if (dialogCtx.mounted) Navigator.pop(dialogCtx);
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFE11D48).withValues(alpha: 0.2),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: const Color(0xFFE11D48).withValues(alpha: 0.7)),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(color: const Color(0xFFE11D48), borderRadius: BorderRadius.circular(8)),
+                                          child: const Icon(Icons.picture_as_pdf, color: Colors.white, size: 22),
+                                        ),
+                                        const SizedBox(width: 14),
+                                        const Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                "Download as PDF (.pdf)",
+                                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                                              ),
+                                              SizedBox(height: 2),
+                                              Text(
+                                                "Printable organized table report with totals & headers",
+                                                style: TextStyle(color: Colors.white60, fontSize: 11),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 14),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                  Positioned(
+                    top: 14,
+                    right: 14,
+                    child: InkWell(
+                      onTap: () => Navigator.pop(dialogCtx),
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.white.withValues(alpha: 0.08),
+                        ),
+                        child: const Icon(Icons.close, size: 18, color: Colors.white70),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _exportInventoryToCsv(List<MaterialItem> items) async {
+    try {
+      final now = DateTime.now();
+      final dateStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+      final defaultFileName = "wameedh_inventory_$dateStr.csv";
+
+      final buffer = StringBuffer();
+      buffer.write('\uFEFF'); // UTF-8 BOM for Microsoft Excel
+      buffer.writeln('"#","Material Name","Topic / Category","Quantity in Stock","Date Added","Description"');
+
+      for (int i = 0; i < items.length; i++) {
+        final item = items[i];
+        final num = i + 1;
+        final name = item.name.replaceAll('"', '""');
+        final cat = item.category.replaceAll('"', '""');
+        final qty = item.quantity;
+        final date = item.date.replaceAll('"', '""');
+        final desc = (item.description ?? "").replaceAll('"', '""').replaceAll('\n', ' ');
+        buffer.writeln('$num,"$name","$cat",$qty,"$date","$desc"');
+      }
+
+      final csvContent = buffer.toString();
+      final bytes = Uint8List.fromList(utf8.encode(csvContent));
+
+      if (Platform.isAndroid || Platform.isIOS) {
+        final tempDir = await Directory.systemTemp.createTemp();
+        final file = File("${tempDir.path}/$defaultFileName");
+        await file.writeAsBytes(bytes);
+
+        await SharePlus.instance.share(
+          ShareParams(
+            files: [XFile(file.path, mimeType: 'text/csv')],
+            subject: "Wameedh Inventory Export ($dateStr)",
+            text: "Wameedh Electronics Inventory List ($dateStr)",
+          ),
+        );
+      } else {
+        final uri = await FilePicker.saveFile(
+          dialogTitle: "Save Excel / CSV Inventory",
+          fileName: defaultFileName,
+          bytes: bytes,
+          type: FileType.custom,
+          allowedExtensions: ['csv'],
+        );
+
+        if (uri != null && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("✅ Exported successfully to: $uri"),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error exporting CSV: $e"), backgroundColor: Colors.redAccent),
+        );
+      }
+    }
+  }
+
+  Future<void> _exportInventoryToPdf(List<MaterialItem> items) async {
+    try {
+      final pdf = pw.Document();
+      final now = DateTime.now();
+      final dateStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+      final timeStr = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
+      final totalStock = items.fold<int>(0, (sum, m) => sum + m.quantity);
+      final totalCategories = items.map((m) => m.category).toSet().length;
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(32),
+          header: (context) => pw.Container(
+            padding: const pw.EdgeInsets.only(bottom: 12),
+            decoration: const pw.BoxDecoration(
+              border: pw.Border(bottom: pw.BorderSide(color: PdfColors.blueGrey800, width: 1.5)),
+            ),
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      "WAMEEDH",
+                      style: pw.TextStyle(
+                        fontSize: 22,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.blue900,
+                      ),
+                    ),
+                    pw.Text(
+                      "Electronics & Components Inventory Report",
+                      style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
+                    ),
+                  ],
+                ),
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                  children: [
+                    pw.Text("Generated on: $dateStr $timeStr", style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600)),
+                    pw.Text("Total Items: ${items.length} | Total Stock: $totalStock units",
+                        style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.blueGrey900)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          footer: (context) => pw.Container(
+            padding: const pw.EdgeInsets.only(top: 8),
+            decoration: const pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(color: PdfColors.grey300, width: 0.5))),
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text("Wameedh Inventory Management System", style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
+                pw.Text("Page ${context.pageNumber} of ${context.pagesCount}", style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
+              ],
+            ),
+          ),
+          build: (context) => [
+            pw.SizedBox(height: 12),
+            pw.Row(
+              children: [
+                pw.Expanded(
+                  child: pw.Container(
+                    padding: const pw.EdgeInsets.all(10),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColors.blue50,
+                      borderRadius: pw.BorderRadius.circular(6),
+                      border: pw.Border.all(color: PdfColors.blue200),
+                    ),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text("Unique Materials", style: const pw.TextStyle(fontSize: 9, color: PdfColors.blue800)),
+                        pw.SizedBox(height: 3),
+                        pw.Text("${items.length}", style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
+                      ],
+                    ),
+                  ),
+                ),
+                pw.SizedBox(width: 10),
+                pw.Expanded(
+                  child: pw.Container(
+                    padding: const pw.EdgeInsets.all(10),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColors.green50,
+                      borderRadius: pw.BorderRadius.circular(6),
+                      border: pw.Border.all(color: PdfColors.green200),
+                    ),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text("Total Units in Stock", style: const pw.TextStyle(fontSize: 9, color: PdfColors.green800)),
+                        pw.SizedBox(height: 3),
+                        pw.Text("$totalStock", style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColors.green900)),
+                      ],
+                    ),
+                  ),
+                ),
+                pw.SizedBox(width: 10),
+                pw.Expanded(
+                  child: pw.Container(
+                    padding: const pw.EdgeInsets.all(10),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColors.amber50,
+                      borderRadius: pw.BorderRadius.circular(6),
+                      border: pw.Border.all(color: PdfColors.amber200),
+                    ),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text("Active Topics", style: const pw.TextStyle(fontSize: 9, color: PdfColors.amber800)),
+                        pw.SizedBox(height: 3),
+                        pw.Text("$totalCategories", style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColors.amber900)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 16),
+            pw.TableHelper.fromTextArray(
+              headers: ['#', 'Material Name', 'Topic', 'Qty', 'Date Added', 'Description'],
+              data: List<List<dynamic>>.generate(items.length, (index) {
+                final item = items[index];
+                return [
+                  (index + 1).toString(),
+                  item.name,
+                  item.category,
+                  item.quantity.toString(),
+                  item.date,
+                  (item.description != null && item.description!.trim().isNotEmpty) ? item.description!.trim() : "-",
+                ];
+              }),
+              headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white, fontSize: 9.5),
+              headerDecoration: const pw.BoxDecoration(color: PdfColors.blueGrey900),
+              rowDecoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200, width: 0.5))),
+              oddRowDecoration: const pw.BoxDecoration(color: PdfColors.grey100),
+              cellAlignment: pw.Alignment.centerLeft,
+              cellAlignments: {
+                0: pw.Alignment.center,
+                3: pw.Alignment.center,
+                4: pw.Alignment.center,
+              },
+              cellStyle: const pw.TextStyle(fontSize: 8.5),
+              cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+              columnWidths: {
+                0: const pw.FixedColumnWidth(24),
+                1: const pw.FlexColumnWidth(3),
+                2: const pw.FlexColumnWidth(2),
+                3: const pw.FixedColumnWidth(38),
+                4: const pw.FixedColumnWidth(64),
+                5: const pw.FlexColumnWidth(3),
+              },
+            ),
+          ],
+        ),
+      );
+
+      final pdfBytes = await pdf.save();
+      final defaultFileName = "wameedh_inventory_$dateStr.pdf";
+
+      if (Platform.isAndroid || Platform.isIOS) {
+        await Printing.sharePdf(bytes: pdfBytes, filename: defaultFileName);
+      } else {
+        final uri = await FilePicker.saveFile(
+          dialogTitle: "Save PDF Inventory Report",
+          fileName: defaultFileName,
+          bytes: pdfBytes,
+          type: FileType.custom,
+          allowedExtensions: ['pdf'],
+        );
+
+        if (uri != null && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("✅ PDF report saved to: $uri"),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error generating PDF: $e"), backgroundColor: Colors.redAccent),
+        );
+      }
+    }
   }
 
   Widget _buildQuantityStepper(TextEditingController controller, {int min = 1, String label = "Qty", double height = 56}) {
@@ -1889,30 +2415,51 @@ class _MainDashboardState extends State<MainDashboard> {
                 ),
               ],
             ),
-            // Layout switcher (Table vs Card view)
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.table_rows_rounded),
-                    tooltip: "Table View",
-                    color: !_isCardView ? Colors.amberAccent : Colors.white54,
-                    onPressed: () {
-                      if (_isCardView) setState(() => _isCardView = false);
-                    },
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => _showExportInventoryDialog(filteredInventory),
+                  icon: const Icon(Icons.file_download_outlined, color: Colors.amberAccent, size: 18),
+                  label: Text(
+                    isMobile ? "Export" : "Export (Excel / PDF)",
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.grid_view_rounded),
-                    tooltip: "Card View",
-                    color: _isCardView ? Colors.amberAccent : Colors.white54,
-                    onPressed: () {
-                      if (!_isCardView) setState(() => _isCardView = true);
-                    },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF203a43),
+                    foregroundColor: Colors.white,
+                    side: BorderSide(color: Colors.amberAccent.withValues(alpha: 0.5)),
+                    padding: EdgeInsets.symmetric(horizontal: isMobile ? 10 : 14, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 8),
+                // Layout switcher (Table vs Card view)
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.table_rows_rounded),
+                        tooltip: "Table View",
+                        color: !_isCardView ? Colors.amberAccent : Colors.white54,
+                        onPressed: () {
+                          if (_isCardView) setState(() => _isCardView = false);
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.grid_view_rounded),
+                        tooltip: "Card View",
+                        color: _isCardView ? Colors.amberAccent : Colors.white54,
+                        onPressed: () {
+                          if (!_isCardView) setState(() => _isCardView = true);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ],
         ),

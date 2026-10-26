@@ -58,13 +58,12 @@ jobs:
           if [ -n "$ENV_FILE" ]; then
             echo "$ENV_FILE" > wameedh_app/.env
           elif [ ! -f "wameedh_app/.env" ]; then
-            cat << 'EOF' > wameedh_app/.env
-DB_HOST=ep-divine-tree-b5uupalq-pooler.c-7.us-east-2.aws.neon.tech
-DB_NAME=neondb
-DB_USER=neondb_owner
-DB_PASSWORD=npg_cNKL5vGwQ9st
-DB_PORT=5432
-EOF
+            printf "%s\n" \
+              "DB_HOST=ep-divine-tree-b5uupalq-pooler.c-7.us-east-2.aws.neon.tech" \
+              "DB_NAME=neondb" \
+              "DB_USER=neondb_owner" \
+              "DB_PASSWORD=npg_cNKL5vGwQ9st" \
+              "DB_PORT=5432" > wameedh_app/.env
           fi
 
       - name: Install dependencies
@@ -113,13 +112,13 @@ EOF
           if ($env:ENV_FILE) {
             $env:ENV_FILE | Out-File -FilePath wameedh_app\.env -Encoding utf8
           } elseif (-not (Test-Path "wameedh_app\.env")) {
-@"
-DB_HOST=ep-divine-tree-b5uupalq-pooler.c-7.us-east-2.aws.neon.tech
-DB_NAME=neondb
-DB_USER=neondb_owner
-DB_PASSWORD=npg_cNKL5vGwQ9st
-DB_PORT=5432
-"@ | Out-File -FilePath wameedh_app\.env -Encoding utf8
+            @(
+              "DB_HOST=ep-divine-tree-b5uupalq-pooler.c-7.us-east-2.aws.neon.tech",
+              "DB_NAME=neondb",
+              "DB_USER=neondb_owner",
+              "DB_PASSWORD=npg_cNKL5vGwQ9st",
+              "DB_PORT=5432"
+            ) | Out-File -FilePath wameedh_app\.env -Encoding utf8
           }
 
       - name: Enable Windows desktop
@@ -176,13 +175,12 @@ DB_PORT=5432
           if [ -n "$ENV_FILE" ]; then
             echo "$ENV_FILE" > wameedh_app/.env
           elif [ ! -f "wameedh_app/.env" ]; then
-            cat << 'EOF' > wameedh_app/.env
-DB_HOST=ep-divine-tree-b5uupalq-pooler.c-7.us-east-2.aws.neon.tech
-DB_NAME=neondb
-DB_USER=neondb_owner
-DB_PASSWORD=npg_cNKL5vGwQ9st
-DB_PORT=5432
-EOF
+            printf "%s\n" \
+              "DB_HOST=ep-divine-tree-b5uupalq-pooler.c-7.us-east-2.aws.neon.tech" \
+              "DB_NAME=neondb" \
+              "DB_USER=neondb_owner" \
+              "DB_PASSWORD=npg_cNKL5vGwQ9st" \
+              "DB_PORT=5432" > wameedh_app/.env
           fi
 
       - name: Enable Linux desktop
@@ -201,24 +199,22 @@ EOF
         run: |
           mkdir -p dist/Wameedh-Linux-x64 artifacts
           cp -r wameedh_app/build/linux/x64/release/bundle/* dist/Wameedh-Linux-x64/
-          cat << 'EOF' > dist/Wameedh-Linux-x64/run.sh
-#!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
-exec ./wameedh_app "$@"
-EOF
+          printf "%s\n" \
+            "#!/bin/bash" \
+            'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' \
+            'cd "$SCRIPT_DIR"' \
+            'exec ./wameedh_app "$@"' > dist/Wameedh-Linux-x64/run.sh
           chmod +x dist/Wameedh-Linux-x64/run.sh dist/Wameedh-Linux-x64/wameedh_app
-          cat << 'EOF' > dist/Wameedh-Linux-x64/README.txt
-Wameedh Material Organizer - Linux (x86_64)
-===========================================
-
-How to run:
-1. Double-click "run.sh" or in a terminal run:
-   ./run.sh
-
-Or execute the binary directly:
-   ./wameedh_app
-EOF
+          printf "%s\n" \
+            "Wameedh Material Organizer - Linux (x86_64)" \
+            "===========================================" \
+            "" \
+            "How to run:" \
+            "1. Double-click run.sh or in a terminal run:" \
+            "   ./run.sh" \
+            "" \
+            "Or execute the binary directly:" \
+            "   ./wameedh_app" > dist/Wameedh-Linux-x64/README.txt
           tar -czvf artifacts/Wameedh-Linux-x64.tar.gz -C dist Wameedh-Linux-x64
 
       - name: Upload Linux Archive
