@@ -6,7 +6,7 @@ void main() async {
       host: 'ep-divine-tree-b5uupalq-pooler.c-7.us-east-2.aws.neon.tech',
       database: 'neondb',
       username: 'neondb_owner',
-      password: 'npg_MARdTOHp06Yn',
+      password: 'npg_cNKL5vGwQ9st',
       port: 5432,
     )],
     settings: PoolSettings(

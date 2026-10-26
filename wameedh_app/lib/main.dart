@@ -58,26 +58,7 @@ void main() async {
       password: password,
       port: port,
     )
-  ], settings: const PoolSettings(maxConnectionCount: 5));
-
-  // Initialize DB tables
-  await dbPool.execute('CREATE TABLE IF NOT EXISTS categories (name TEXT PRIMARY KEY)');
-  await dbPool.execute('''
-    CREATE TABLE IF NOT EXISTS inventory (
-      id TEXT PRIMARY KEY, name TEXT, quantity INT, category TEXT, date TEXT, image_data TEXT
-    )
-  ''');
-  await dbPool.execute('''
-    CREATE TABLE IF NOT EXISTS borrowers (
-      id TEXT PRIMARY KEY, person_name TEXT, email TEXT, phone TEXT,
-      inventory_id TEXT, item_taken TEXT, topic TEXT, quantity_taken INT, date TEXT
-    )
-  ''');
-  
-  // Migrations for older database tables
-  await dbPool.execute('ALTER TABLE borrowers ADD COLUMN IF NOT EXISTS inventory_id TEXT');
-  await dbPool.execute('ALTER TABLE inventory ADD COLUMN IF NOT EXISTS image_data TEXT');
-  await dbPool.execute('ALTER TABLE inventory ADD COLUMN IF NOT EXISTS description TEXT');
+  ], settings: const PoolSettings(maxConnectionCount: 5, sslMode: SslMode.require));
 
   runApp(const WameedhApp());
 }
@@ -187,6 +168,28 @@ class _MainDashboardState extends State<MainDashboard> {
   
   bool _isCardView = false;
   bool _isLoading = true;
+  String? _errorMessage;
+  bool _tablesInitialized = false;
+
+  Future<void> _initDbTables() async {
+    if (_tablesInitialized) return;
+    await dbPool.execute('CREATE TABLE IF NOT EXISTS categories (name TEXT PRIMARY KEY)');
+    await dbPool.execute('''
+      CREATE TABLE IF NOT EXISTS inventory (
+        id TEXT PRIMARY KEY, name TEXT, quantity INT, category TEXT, date TEXT, image_data TEXT
+      )
+    ''');
+    await dbPool.execute('''
+      CREATE TABLE IF NOT EXISTS borrowers (
+        id TEXT PRIMARY KEY, person_name TEXT, email TEXT, phone TEXT,
+        inventory_id TEXT, item_taken TEXT, topic TEXT, quantity_taken INT, date TEXT
+      )
+    ''');
+    await dbPool.execute('ALTER TABLE borrowers ADD COLUMN IF NOT EXISTS inventory_id TEXT');
+    await dbPool.execute('ALTER TABLE inventory ADD COLUMN IF NOT EXISTS image_data TEXT');
+    await dbPool.execute('ALTER TABLE inventory ADD COLUMN IF NOT EXISTS description TEXT');
+    _tablesInitialized = true;
+  }
 
   Future<String?> _pickAndProcessImage() async {
     try {
@@ -1193,7 +1196,14 @@ class _MainDashboardState extends State<MainDashboard> {
   }
 
   Future<void> _loadData() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
     try {
+      await _initDbTables();
+
       final catRes = await dbPool.execute('SELECT name FROM categories');
       _categories.clear();
       for (final row in catRes) {
@@ -1229,9 +1239,14 @@ class _MainDashboardState extends State<MainDashboard> {
           _borrowMaterialController.text = _inventory.first.name;
         }
         _isLoading = false;
+        _errorMessage = null;
       });
     } catch (e) {
-      print("Error loading data from DB: $e");
+      debugPrint("Error loading data from DB: $e");
+      setState(() {
+        _isLoading = false;
+        _errorMessage = e.toString();
+      });
     }
   }
 
@@ -2309,7 +2324,79 @@ class _MainDashboardState extends State<MainDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF0f2027),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.flash_on_rounded, size: 72, color: Colors.amberAccent),
+              const SizedBox(height: 24),
+              const CircularProgressIndicator(color: Colors.amberAccent),
+              const SizedBox(height: 20),
+              const Text(
+                'Connecting to Wameedh Database...',
+                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Syncing materials and log data',
+                style: TextStyle(color: Colors.white54, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_errorMessage != null) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF0f2027),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.cloud_off_rounded, size: 72, color: Colors.redAccent),
+                const SizedBox(height: 20),
+                const Text(
+                  'Database Connection Issue',
+                  style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+                  ),
+                  child: Text(
+                    _errorMessage!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton.icon(
+                  onPressed: _loadData,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.amberAccent,
+                    foregroundColor: Colors.black87,
+                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  icon: const Icon(Icons.refresh, size: 20),
+                  label: const Text('Retry Connection', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     final bool isMobile = MediaQuery.of(context).size.width < 800;
 
