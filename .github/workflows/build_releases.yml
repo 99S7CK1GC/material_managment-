@@ -205,34 +205,37 @@ jobs:
           if [ -f "wameedh_app/assets/logo.png" ]; then
             cp wameedh_app/assets/logo.png dist/Wameedh-Linux-x64/logo.png
           fi
-          printf "%s\n" \
-            "#!/bin/bash" \
-            'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' \
-            'cd "$SCRIPT_DIR"' \
-            'exec ./wameedh_app "$@"' > dist/Wameedh-Linux-x64/run.sh
+          cat << 'EOF' > dist/Wameedh-Linux-x64/run.sh
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+exec ./wameedh_app "$@"
+EOF
           chmod +x dist/Wameedh-Linux-x64/run.sh dist/Wameedh-Linux-x64/wameedh_app
-          printf "%s\n" \
-            "[Desktop Entry]" \
-            "Version=1.0" \
-            "Type=Application" \
-            "Name=Wameedh" \
-            "GenericName=Material Organizer" \
-            "Comment=Wameedh Material & Inventory Management System" \
-            "Exec=sh -c '\"$(dirname \"\$(realpath \"\$0\")\")/run.sh\"'" \
-            "Icon=logo" \
-            "Terminal=false" \
-            "Categories=Office;Utility;" > dist/Wameedh-Linux-x64/wameedh.desktop
+          cat << 'EOF' > dist/Wameedh-Linux-x64/wameedh.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Wameedh
+GenericName=Material Organizer
+Comment=Wameedh Material & Inventory Management System
+Exec=sh -c '"$(dirname "$(realpath "$0")")/run.sh"'
+Icon=logo
+Terminal=false
+Categories=Office;Utility;
+EOF
           chmod +x dist/Wameedh-Linux-x64/wameedh.desktop
-          printf "%s\n" \
-            "Wameedh Material Organizer - Linux (x86_64)" \
-            "===========================================" \
-            "" \
-            "How to run:" \
-            "1. Double-click run.sh or in a terminal run:" \
-            "   ./run.sh" \
-            "" \
-            "Or execute the binary directly:" \
-            "   ./wameedh_app" > dist/Wameedh-Linux-x64/README.txt
+          cat << 'EOF' > dist/Wameedh-Linux-x64/README.txt
+Wameedh Material Organizer - Linux (x86_64)
+===========================================
+
+How to run:
+1. Double-click run.sh or in a terminal run:
+   ./run.sh
+
+Or execute the binary directly:
+   ./wameedh_app
+EOF
           tar -czvf artifacts/Wameedh-Linux-x64.tar.gz -C dist Wameedh-Linux-x64
 
       - name: Upload Linux Archive
