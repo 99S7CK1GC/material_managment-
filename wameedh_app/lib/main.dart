@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:postgres/postgres.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:file_picker/file_picker.dart';
@@ -944,6 +944,14 @@ class _MainDashboardState extends State<MainDashboard> {
       final totalStock = items.fold<int>(0, (sum, m) => sum + m.quantity);
       final totalCategories = items.map((m) => m.category).toSet().length;
 
+      pw.MemoryImage? logoImage;
+      try {
+        final logoByteData = await rootBundle.load('assets/logo.png');
+        logoImage = pw.MemoryImage(logoByteData.buffer.asUint8List());
+      } catch (e) {
+        debugPrint('Could not load logo for PDF export: $e');
+      }
+
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
@@ -956,20 +964,36 @@ class _MainDashboardState extends State<MainDashboard> {
             child: pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.center,
                   children: [
-                    pw.Text(
-                      "WAMEEDH",
-                      style: pw.TextStyle(
-                        fontSize: 22,
-                        fontWeight: pw.FontWeight.bold,
-                        color: PdfColors.blue900,
+                    if (logoImage != null)
+                      pw.Container(
+                        width: 38,
+                        height: 38,
+                        margin: const pw.EdgeInsets.only(right: 10),
+                        child: pw.ClipRRect(
+                          horizontalRadius: 6,
+                          verticalRadius: 6,
+                          child: pw.Image(logoImage, fit: pw.BoxFit.contain),
+                        ),
                       ),
-                    ),
-                    pw.Text(
-                      "Electronics & Components Inventory Report",
-                      style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          "WAMEEDH",
+                          style: pw.TextStyle(
+                            fontSize: 22,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.blue900,
+                          ),
+                        ),
+                        pw.Text(
+                          "Electronics & Components Inventory Report",
+                          style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -2333,7 +2357,27 @@ class _MainDashboardState extends State<MainDashboard> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.flash_on_rounded, size: 72, color: Colors.amberAccent),
+              Container(
+                width: 96,
+                height: 96,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: Colors.amberAccent.withValues(alpha: 0.4), width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.amberAccent.withValues(alpha: 0.3),
+                      blurRadius: 25,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Image.asset(
+                  'assets/logo.png',
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, _) => const Icon(Icons.flash_on_rounded, size: 72, color: Colors.amberAccent),
+                ),
+              ),
               const SizedBox(height: 24),
               const CircularProgressIndicator(color: Colors.amberAccent),
               const SizedBox(height: 20),
@@ -2405,14 +2449,40 @@ class _MainDashboardState extends State<MainDashboard> {
     if (isMobile) {
       return Scaffold(
         appBar: AppBar(
-          title: const Text(
-            "WAMEEDH",
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 2,
-              color: Colors.amberAccent,
-            ),
+          title: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.amberAccent.withValues(alpha: 0.4), width: 1),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.amberAccent.withValues(alpha: 0.25),
+                      blurRadius: 8,
+                    ),
+                  ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Image.asset(
+                  'assets/logo.png',
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, _) => const Icon(Icons.flash_on_rounded, size: 20, color: Colors.amberAccent),
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Text(
+                "WAMEEDH",
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 2,
+                  color: Colors.amberAccent,
+                ),
+              ),
+            ],
           ),
           centerTitle: true,
           backgroundColor: const Color(0xFF0f2027),
@@ -2481,9 +2551,33 @@ class _MainDashboardState extends State<MainDashboard> {
               width: 250, borderRadius: BorderRadius.zero,
               child: Column(
                 children: [
-                  const SizedBox(height: 40),
-                  const Text("WAMEEDH", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 2, color: Colors.amberAccent)),
-                  const SizedBox(height: 50),
+                  const SizedBox(height: 36),
+                  Container(
+                    width: 76,
+                    height: 76,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: Colors.amberAccent.withValues(alpha: 0.45), width: 1.5),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.amberAccent.withValues(alpha: 0.25),
+                          blurRadius: 20,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Image.asset(
+                      'assets/logo.png',
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, _) => const Icon(Icons.flash_on_rounded, size: 48, color: Colors.amberAccent),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text("WAMEEDH", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 2, color: Colors.amberAccent)),
+                  const SizedBox(height: 4),
+                  const Text("Logistics & Inventory", style: TextStyle(fontSize: 12, color: Colors.white54, letterSpacing: 0.5)),
+                  const SizedBox(height: 36),
                   _SidebarItem(icon: Icons.inventory_2, title: "Inventory", isActive: _currentViewIndex == 0, onTap: () => setState(() => _currentViewIndex = 0)),
                   _SidebarItem(icon: Icons.people, title: "Borrowers Log", isActive: _currentViewIndex == 1, onTap: () => setState(() => _currentViewIndex = 1)),
                 ],

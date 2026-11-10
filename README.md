@@ -1,9 +1,15 @@
-# ⚡ Wameedh Logistics & Material Manager (وميض)
+<p align="center">
+  <img src="wameedh_app/assets/logo.png" alt="Wameedh Logo" width="130" />
+</p>
 
-[![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
-[![Platforms](https://img.shields.io/badge/Platforms-Android%20%7C%20Windows%20%7C%20Linux-brightgreen)](https://github.com/99S7CK1GC/material_managment-/releases)
-[![Database](https://img.shields.io/badge/Database-Neon%20PostgreSQL-00E599?logo=postgresql&logoColor=white)](https://neon.tech)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+# <p align="center">⚡ Wameedh Logistics & Material Manager (وميض)</p>
+
+<p align="center">
+  <a href="https://flutter.dev"><img src="https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter&logoColor=white" alt="Flutter" /></a>
+  <a href="https://github.com/99S7CK1GC/material_managment-/releases"><img src="https://img.shields.io/badge/Platforms-Android%20%7C%20Windows%20%7C%20Linux-brightgreen" alt="Platforms" /></a>
+  <a href="https://neon.tech"><img src="https://img.shields.io/badge/Database-Neon%20PostgreSQL-00E599?logo=postgresql&logoColor=white" alt="Database" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License" /></a>
+</p>
 
 **Wameedh (وميض)** is a modern, real-time logistics and electronics inventory management system tailored for maker spaces, robotics clubs, and lab logistics teams. 
 
