@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Wameedh
+GenericName=Material Organizer
+Comment=Wameedh Material & Inventory Management System
+Exec=sh -c '"$(dirname "$(realpath "$0")")/run.sh"'
+Icon=logo
+Terminal=false
+Categories=Office;Utility;
