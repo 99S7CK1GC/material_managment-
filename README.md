@@ -44,9 +44,14 @@ Connected to a cloud-hosted **Neon PostgreSQL** database, Wameedh allows team me
   - *Android*: Launches the native Share Sheet to save to Files or share via WhatsApp, Telegram, Google Drive, or Gmail.
   - *Desktop*: Opens a native Save File dialog to save directly to any folder on your computer.
 
-### 👥 Smart Borrowers & Checkout Tracking
-- **Smart Grouped Receipts**: Checkouts are grouped by borrower. If a member borrows multiple items, they appear cleanly under one borrower card.
-- **Partial Returns Support**: Members can return partial quantities (e.g., returning 3 out of 5 borrowed sensors). The system immediately returns 3 to stock while keeping the remaining 2 tracked under their name.
+### 👥 Smart Borrowers & Team Checkout Tracking
+- **Individual & Team Checkouts**: Seamlessly switch between **👤 Individual Person** loans and **👥 Team / Project Group** checkouts.
+- **Shared Team Inventory**: Check out materials once for a whole project team (e.g., 1 Breadboard and 1 Arduino shared by multiple members like Ayoub and Antigravity) without duplicating inventory subtractions.
+- **Project Manager & Member Badges**: Team cards clearly highlight the Project Manager / Lead name, contact info, and interactive member chips for all assigned team members.
+- **Smart Grouped Receipts**: Checkouts are grouped by borrower or team. If multiple items are borrowed over time, they appear together under a single clean receipt card.
+- **Filter Tabs & Real-time Search**: Instant filter pills (`All`, `👤 Individuals`, `👥 Teams`) and smart search by member name, team name, PM, item, or topic.
+- **Component Modal Visibility**: Tap any inventory component to see a live breakdown of who is currently holding it (individual members and teams).
+- **Partial Returns Support**: Members can return partial quantities (e.g., returning 3 out of 5 borrowed sensors). The system immediately returns 3 to stock while keeping the remaining 2 tracked under their name or team.
 - **Overdue & Active Tracking**: Clear indicators of active loans and member contact information (phone number, email).
 
 ---
@@ -74,10 +79,12 @@ Pre-built binaries are automatically built and published via GitHub Actions for 
 - **Export**: Click the green **"Export (Excel / PDF)"** button in the inventory toolbar to download a report.
 
 ### 2. Checking Out Materials (Borrowers View)
-1. Enter the borrower's **Name**, **Phone Number**, and **Email**.
-2. Use the **search bar** to quickly locate the component they need.
-3. Specify the quantity to borrow and click **"Checkout"**.
-4. To check out additional items to the same person, leave their contact information in place, select the next item, and click checkout again.
+1. Select checkout type: **👤 Individual Person** or **👥 Team / Project Group**.
+2. For an individual: Enter **Name**, **Phone Number**, and **Email**.
+   For a team: Enter **Team Name**, **Project Manager / Lead**, **Team Members** (e.g., `Ayoub, Antigravity`), and contact details.
+3. Use the **Topic** and **Material** selectors (or search bar) to quickly locate the needed component.
+4. Specify the quantity to borrow and click **"Checkout"** (or **"Team Checkout"**).
+5. The equipment is checked out once for the entire person or team without duplicate inventory subtractions. Leave the form details in place to quickly checkout additional items under the same receipt!
 
 ### 3. Processing Returns
 1. Locate the borrower's card in the **Checkout Log**.

@@ -126,7 +126,35 @@ class BorrowerLog {
   String topic;      
   int quantityTaken; 
   final String date;
-  BorrowerLog(this.id, this.personName, this.email, this.phone, this.inventoryId, this.itemTaken, this.topic, this.quantityTaken, this.date);
+  final String borrowerType; // 'individual' or 'team'
+  final String? teamName;
+  final String? teamMembers;
+
+  BorrowerLog(
+    this.id,
+    this.personName,
+    this.email,
+    this.phone,
+    this.inventoryId,
+    this.itemTaken,
+    this.topic,
+    this.quantityTaken,
+    this.date, {
+    this.borrowerType = 'individual',
+    this.teamName,
+    this.teamMembers,
+  });
+
+  bool get isTeam => borrowerType.toLowerCase() == 'team' || (teamName != null && teamName!.trim().isNotEmpty);
+
+  List<String> get teamMemberList {
+    if (teamMembers == null || teamMembers!.trim().isEmpty) return [];
+    return teamMembers!
+        .split(RegExp(r'[,،;\n]+'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+  }
 }
 
 // --- Main Application State ---
@@ -159,6 +187,10 @@ class _MainDashboardState extends State<MainDashboard> {
   final TextEditingController _borrowTopicController = TextEditingController();
   final TextEditingController _borrowMaterialController = TextEditingController();
   final TextEditingController _borrowHistorySearchController = TextEditingController();
+  final TextEditingController _teamNameController = TextEditingController();
+  final TextEditingController _teamMembersController = TextEditingController();
+  String _selectedBorrowerType = "individual"; // "individual" or "team"
+  String _borrowTypeFilter = "All"; // "All", "Individual", "Team"
   String _searchName = "";
   String _searchTopic = "";
   String _borrowTopicFilter = "All";
@@ -184,10 +216,14 @@ class _MainDashboardState extends State<MainDashboard> {
     await dbPool.execute('''
       CREATE TABLE IF NOT EXISTS borrowers (
         id TEXT PRIMARY KEY, person_name TEXT, email TEXT, phone TEXT,
-        inventory_id TEXT, item_taken TEXT, topic TEXT, quantity_taken INT, date TEXT
+        inventory_id TEXT, item_taken TEXT, topic TEXT, quantity_taken INT, date TEXT,
+        borrower_type TEXT DEFAULT 'individual', team_name TEXT, team_members TEXT
       )
     ''');
     await dbPool.execute('ALTER TABLE borrowers ADD COLUMN IF NOT EXISTS inventory_id TEXT');
+    await dbPool.execute("ALTER TABLE borrowers ADD COLUMN IF NOT EXISTS borrower_type TEXT DEFAULT 'individual'");
+    await dbPool.execute('ALTER TABLE borrowers ADD COLUMN IF NOT EXISTS team_name TEXT');
+    await dbPool.execute('ALTER TABLE borrowers ADD COLUMN IF NOT EXISTS team_members TEXT');
     await dbPool.execute('ALTER TABLE inventory ADD COLUMN IF NOT EXISTS image_data TEXT');
     await dbPool.execute('ALTER TABLE inventory ADD COLUMN IF NOT EXISTS description TEXT');
     _tablesInitialized = true;
@@ -536,6 +572,60 @@ class _MainDashboardState extends State<MainDashboard> {
                               fontStyle: hasDesc ? FontStyle.normal : FontStyle.italic,
                             ),
                           ),
+                          if (borrowedCount > 0) ...[
+                            const SizedBox(height: 16),
+                            const Text(
+                              "CURRENTLY BORROWED BY",
+                              style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.8),
+                            ),
+                            const SizedBox(height: 6),
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.black26,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: Colors.white10),
+                              ),
+                              child: Column(
+                                children: _borrowers
+                                    .where((b) => b.inventoryId == item.id || b.itemTaken.toLowerCase() == item.name.toLowerCase())
+                                    .map((b) => Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 3),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            b.isTeam ? Icons.groups_rounded : Icons.person,
+                                            size: 16,
+                                            color: b.isTeam ? const Color(0xFF00C9A7) : Colors.amberAccent,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              b.isTeam
+                                                  ? "${b.teamName?.isNotEmpty == true ? b.teamName : 'Team'} (PM: ${b.personName})"
+                                                  : b.personName,
+                                              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white10,
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              "Qty: ${b.quantityTaken}",
+                                              style: const TextStyle(color: Colors.greenAccent, fontSize: 12, fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ))
+                                    .toList(),
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 22),
 
                           // 6. Action Buttons: Edit and Delete
@@ -1250,12 +1340,27 @@ class _MainDashboardState extends State<MainDashboard> {
         _inventory.add(MaterialItem(row[0] as String, row[1] as String, row[2] as int, row[3] as String, row[4] as String, img, desc));
       }
 
-      final borRes = await dbPool.execute('SELECT id, person_name, email, phone, inventory_id, item_taken, topic, quantity_taken, date FROM borrowers ORDER BY date DESC');
+      final borRes = await dbPool.execute('SELECT id, person_name, email, phone, inventory_id, item_taken, topic, quantity_taken, date, COALESCE(borrower_type, \'individual\'), team_name, team_members FROM borrowers ORDER BY date DESC');
       _borrowers.clear();
       for (final row in borRes) {
-        // Handle migration where inventory_id might be null
         String invId = row[4] != null ? row[4] as String : "";
-        _borrowers.add(BorrowerLog(row[0] as String, row[1] as String, row[2] as String, row[3] as String, invId, row[5] as String, row[6] as String, row[7] as int, row[8] as String));
+        String bType = row[9]?.toString() ?? "individual";
+        String? tName = row[10]?.toString();
+        String? tMembers = row[11]?.toString();
+        _borrowers.add(BorrowerLog(
+          row[0] as String,
+          row[1] as String,
+          row[2] as String,
+          row[3] as String,
+          invId,
+          row[5] as String,
+          row[6] as String,
+          row[7] as int,
+          row[8] as String,
+          borrowerType: bType,
+          teamName: tName,
+          teamMembers: tMembers,
+        ));
       }
 
       setState(() {
@@ -1290,6 +1395,8 @@ class _MainDashboardState extends State<MainDashboard> {
     _borrowTopicController.dispose();
     _borrowMaterialController.dispose();
     _borrowHistorySearchController.dispose();
+    _teamNameController.dispose();
+    _teamMembersController.dispose();
     super.dispose();
   }
 
@@ -1821,11 +1928,22 @@ class _MainDashboardState extends State<MainDashboard> {
   }
 
   void _addBorrowerLog() async {
-    if (_personNameController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please enter the borrower's name"), backgroundColor: Colors.orangeAccent),
-      );
-      return;
+    final bool isTeam = _selectedBorrowerType == "team";
+
+    if (isTeam) {
+      if (_teamNameController.text.trim().isEmpty && _personNameController.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Please enter Team / Project Name or Project Manager"), backgroundColor: Colors.orangeAccent),
+        );
+        return;
+      }
+    } else {
+      if (_personNameController.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Please enter the borrower's name"), backgroundColor: Colors.orangeAccent),
+        );
+        return;
+      }
     }
 
     // Resolve selected material if null or invalid
@@ -1863,9 +1981,17 @@ class _MainDashboardState extends State<MainDashboard> {
       
       await dbPool.execute('UPDATE inventory SET quantity = \$1 WHERE id = \$2', parameters: [newStock, item.id]);
 
+      String personName = _personNameController.text.trim();
+      String? teamName = isTeam ? _teamNameController.text.trim() : null;
+      String? teamMembers = isTeam ? _teamMembersController.text.trim() : null;
+
+      if (isTeam && personName.isEmpty) {
+        personName = (teamName != null && teamName.isNotEmpty) ? teamName : "Team";
+      }
+
       final newLog = BorrowerLog(
         DateTime.now().millisecondsSinceEpoch.toString(),
-        _personNameController.text.trim(),
+        personName,
         _emailController.text.trim(),
         _phoneController.text.trim(),
         item.id,
@@ -1873,20 +1999,43 @@ class _MainDashboardState extends State<MainDashboard> {
         item.category,
         qtyTaken,
         _getCurrentDate(),
+        borrowerType: _selectedBorrowerType,
+        teamName: teamName,
+        teamMembers: teamMembers,
       );
 
-      await dbPool.execute('INSERT INTO borrowers (id, person_name, email, phone, inventory_id, item_taken, topic, quantity_taken, date) VALUES (\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9)', 
-        parameters: [newLog.id, newLog.personName, newLog.email, newLog.phone, newLog.inventoryId, newLog.itemTaken, newLog.topic, newLog.quantityTaken, newLog.date]);
+      await dbPool.execute('''
+        INSERT INTO borrowers (
+          id, person_name, email, phone, inventory_id, item_taken, topic, quantity_taken, date,
+          borrower_type, team_name, team_members
+        ) VALUES (\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10, \$11, \$12)
+      ''', parameters: [
+        newLog.id,
+        newLog.personName,
+        newLog.email,
+        newLog.phone,
+        newLog.inventoryId,
+        newLog.itemTaken,
+        newLog.topic,
+        newLog.quantityTaken,
+        newLog.date,
+        newLog.borrowerType,
+        newLog.teamName,
+        newLog.teamMembers,
+      ]);
 
       setState(() {
         _inventory[invIndex].quantity = newStock;
         _borrowers.insert(0, newLog);
         
-        // Only clear qty, keep user info for multiple borrow actions!
+        // Only clear qty, keep user/team info for multiple borrow actions!
         _borrowQtyController.text = "1";
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Checkout successful!"), backgroundColor: Colors.green));
+        final successMsg = isTeam
+            ? "Team checkout successful for ${newLog.teamName?.isNotEmpty == true ? newLog.teamName : newLog.personName}!"
+            : "Checkout successful!";
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(successMsg), backgroundColor: Colors.green));
       }
     }
   }
@@ -2040,7 +2189,7 @@ class _MainDashboardState extends State<MainDashboard> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    "Are you sure you want to delete this checkout record for ${log.personName}?",
+                    "Are you sure you want to delete this checkout record for ${log.isTeam ? (log.teamName?.isNotEmpty == true ? log.teamName! : log.personName) : log.personName}?",
                     style: const TextStyle(color: Colors.white, fontSize: 16),
                   ),
                   const SizedBox(height: 10),
@@ -3138,7 +3287,7 @@ class _MainDashboardState extends State<MainDashboard> {
         style: const TextStyle(color: Colors.white, fontSize: 13),
         decoration: InputDecoration(
           prefixIcon: const Icon(Icons.search, color: Colors.amberAccent, size: 18),
-          hintText: "Search records by person, item, topic...",
+          hintText: "Search records by person, team, member, item...",
           hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 10),
@@ -3159,6 +3308,229 @@ class _MainDashboardState extends State<MainDashboard> {
             _borrowHistorySearch = val.trim();
           });
         },
+      ),
+    );
+  }
+
+  Widget _buildBorrowerTypeToggle({bool isMobile = false}) {
+    final bool isIndividual = _selectedBorrowerType == "individual";
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: Colors.black38,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white12),
+      ),
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        children: [
+          Expanded(
+            child: InkWell(
+              onTap: () {
+                if (!isIndividual) {
+                  setState(() => _selectedBorrowerType = "individual");
+                }
+              },
+              borderRadius: BorderRadius.circular(9),
+              child: Container(
+                padding: EdgeInsets.symmetric(vertical: isMobile ? 8 : 10),
+                decoration: BoxDecoration(
+                  color: isIndividual ? Colors.amberAccent : Colors.transparent,
+                  borderRadius: BorderRadius.circular(9),
+                  boxShadow: isIndividual
+                      ? [
+                          BoxShadow(
+                            color: Colors.amberAccent.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          )
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.person_outline,
+                      size: isMobile ? 18 : 20,
+                      color: isIndividual ? Colors.black : Colors.white70,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      "Individual Person",
+                      style: TextStyle(
+                        color: isIndividual ? Colors.black : Colors.white70,
+                        fontWeight: FontWeight.bold,
+                        fontSize: isMobile ? 13 : 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: InkWell(
+              onTap: () {
+                if (isIndividual) {
+                  setState(() => _selectedBorrowerType = "team");
+                }
+              },
+              borderRadius: BorderRadius.circular(9),
+              child: Container(
+                padding: EdgeInsets.symmetric(vertical: isMobile ? 8 : 10),
+                decoration: BoxDecoration(
+                  color: !isIndividual ? const Color(0xFF00C9A7) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(9),
+                  boxShadow: !isIndividual
+                      ? [
+                          BoxShadow(
+                            color: const Color(0xFF00C9A7).withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          )
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.groups_outlined,
+                      size: isMobile ? 18 : 20,
+                      color: !isIndividual ? Colors.black : Colors.white70,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      "Team / Project Group",
+                      style: TextStyle(
+                        color: !isIndividual ? Colors.black : Colors.white70,
+                        fontWeight: FontWeight.bold,
+                        fontSize: isMobile ? 13 : 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTeamMemberChipsPreview(String rawMembers, {bool isMobile = false}) {
+    final members = rawMembers
+        .split(RegExp(r'[,،;\n]+'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (members.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black26,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF00C9A7).withValues(alpha: 0.2)),
+      ),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.people_outline, size: 14, color: Color(0xFF00C9A7)),
+              const SizedBox(width: 4),
+              Text(
+                "Members (${members.length}):",
+                style: const TextStyle(color: Color(0xFF00C9A7), fontSize: 11, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          ...members.map((m) => Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: const Color(0xFF00C9A7).withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: const Color(0xFF00C9A7).withValues(alpha: 0.4)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.person, size: 11, color: Color(0xFF00C9A7)),
+                const SizedBox(width: 4),
+                Text(m, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w500)),
+              ],
+            ),
+          )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBorrowTypeFilters({bool isMobile = false}) {
+    final int totalCount = _borrowers.length;
+    final int individualCount = _borrowers.where((b) => !b.isTeam).length;
+    final int teamCount = _borrowers.where((b) => b.isTeam).length;
+
+    Widget buildChip(String type, String label, IconData icon) {
+      final bool isSelected = _borrowTypeFilter == type;
+      return InkWell(
+        onTap: () => setState(() => _borrowTypeFilter = type),
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: isMobile ? 8 : 12, vertical: isMobile ? 4 : 6),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? (type == "Team" ? const Color(0xFF00C9A7) : (type == "Individual" ? Colors.amberAccent : Colors.blueAccent))
+                : Colors.white.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isSelected
+                  ? Colors.transparent
+                  : Colors.white.withValues(alpha: 0.15),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: isMobile ? 13 : 15,
+                color: isSelected ? Colors.black : Colors.white70,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? Colors.black : Colors.white70,
+                  fontSize: isMobile ? 11 : 12,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          buildChip("All", "All ($totalCount)", Icons.list_alt_rounded),
+          const SizedBox(width: 6),
+          buildChip("Individual", "👤 Individuals ($individualCount)", Icons.person_outline),
+          const SizedBox(width: 6),
+          buildChip("Team", "👥 Teams ($teamCount)", Icons.groups_outlined),
+        ],
       ),
     );
   }
@@ -3435,19 +3807,28 @@ class _MainDashboardState extends State<MainDashboard> {
     
     // Filter borrower records
     final filteredBorrowers = _borrowers.where((log) {
+      if (_borrowTypeFilter == "Individual" && log.isTeam) return false;
+      if (_borrowTypeFilter == "Team" && !log.isTeam) return false;
       if (_borrowHistorySearch.isEmpty) return true;
       final q = _borrowHistorySearch.toLowerCase();
       return log.personName.toLowerCase().contains(q) ||
+          (log.teamName != null && log.teamName!.toLowerCase().contains(q)) ||
+          (log.teamMembers != null && log.teamMembers!.toLowerCase().contains(q)) ||
           log.phone.toLowerCase().contains(q) ||
           log.email.toLowerCase().contains(q) ||
           log.itemTaken.toLowerCase().contains(q) ||
           log.topic.toLowerCase().contains(q);
     }).toList();
 
-    // Group borrowers by name + phone
+    // Group borrowers by name + phone or team
     Map<String, List<BorrowerLog>> groupedLogs = {};
     for (var log in filteredBorrowers) {
-      String key = "${log.personName}|${log.phone}|${log.email}";
+      String key;
+      if (log.isTeam) {
+        key = "team|${log.teamName ?? ''}|${log.personName}|${log.phone}|${log.email}";
+      } else {
+        key = "individual|${log.personName}|${log.phone}|${log.email}";
+      }
       if (!groupedLogs.containsKey(key)) groupedLogs[key] = [];
       groupedLogs[key]!.add(log);
     }
@@ -3476,37 +3857,233 @@ class _MainDashboardState extends State<MainDashboard> {
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.05),
               borderRadius: BorderRadius.circular(15),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+              border: Border.all(
+                color: first.isTeam
+                    ? const Color(0xFF00C9A7).withValues(alpha: 0.3)
+                    : Colors.white.withValues(alpha: 0.1),
+              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (isMobile) ...[
-                  Row(
-                    children: [
-                      const Icon(Icons.person, color: Colors.amberAccent, size: 24),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          first.personName,
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
-                          overflow: TextOverflow.ellipsis,
+                if (first.isTeam) ...[
+                  if (isMobile) ...[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(7),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF00C9A7).withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFF00C9A7).withValues(alpha: 0.5)),
+                          ),
+                          child: const Icon(Icons.groups_rounded, color: Color(0xFF00C9A7), size: 20),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      first.teamName?.isNotEmpty == true ? first.teamName! : "Project Team",
+                                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF00C9A7).withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: const Color(0xFF00C9A7).withValues(alpha: 0.5)),
+                                    ),
+                                    child: const Text("TEAM", style: TextStyle(color: Color(0xFF00C9A7), fontSize: 10, fontWeight: FontWeight.bold)),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                "PM / Lead: ${first.personName}",
+                                style: const TextStyle(color: Colors.amberAccent, fontSize: 12, fontWeight: FontWeight.w600),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (first.phone.isNotEmpty || first.email.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text("${first.phone}  •  ${first.email}", style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                    ],
+                    if (first.teamMemberList.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.black38,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white10),
+                        ),
+                        child: Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            const Text("Members:", style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.bold)),
+                            ...first.teamMemberList.map((m) => Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF00C9A7).withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.person, size: 10, color: Color(0xFF00C9A7)),
+                                  const SizedBox(width: 3),
+                                  Text(m, style: const TextStyle(color: Colors.white, fontSize: 11)),
+                                ],
+                              ),
+                            )),
+                          ],
                         ),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text("${first.phone}  •  ${first.email}", style: const TextStyle(color: Colors.white70, fontSize: 13)),
-                ] else ...[
-                  Row(
-                    children: [
-                      const Icon(Icons.person, color: Colors.amberAccent, size: 28),
-                      const SizedBox(width: 12),
-                      Text(first.personName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
-                      const Spacer(),
-                      Text("${first.phone}  •  ${first.email}", style: const TextStyle(color: Colors.white70, fontSize: 16)),
+                  ] else ...[
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF00C9A7).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFF00C9A7).withValues(alpha: 0.5)),
+                          ),
+                          child: const Icon(Icons.groups_rounded, color: Color(0xFF00C9A7), size: 28),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    first.teamName?.isNotEmpty == true ? first.teamName! : "Project Team",
+                                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF00C9A7).withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: const Color(0xFF00C9A7).withValues(alpha: 0.5)),
+                                    ),
+                                    child: const Text("TEAM CHECKOUT", style: TextStyle(color: Color(0xFF00C9A7), fontSize: 11, fontWeight: FontWeight.bold)),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  const Icon(Icons.person_pin_circle_outlined, size: 16, color: Colors.amberAccent),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    "Project Manager: ${first.personName}",
+                                    style: const TextStyle(color: Colors.amberAccent, fontSize: 14, fontWeight: FontWeight.w600),
+                                  ),
+                                  if (first.phone.isNotEmpty || first.email.isNotEmpty) ...[
+                                    const SizedBox(width: 14),
+                                    Text("•", style: const TextStyle(color: Colors.white38)),
+                                    const SizedBox(width: 14),
+                                    Text("${first.phone}   ${first.email}", style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (first.teamMemberList.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.black26,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.white10),
+                        ),
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.people_alt_outlined, size: 16, color: Color(0xFF00C9A7)),
+                                SizedBox(width: 6),
+                                Text("Assigned Members:", style: TextStyle(color: Colors.white60, fontSize: 13, fontWeight: FontWeight.bold)),
+                              ],
+                            ),
+                            ...first.teamMemberList.map((m) => Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF00C9A7).withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFF00C9A7).withValues(alpha: 0.3)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.person, size: 12, color: Color(0xFF00C9A7)),
+                                  const SizedBox(width: 4),
+                                  Text(m, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
+                                ],
+                              ),
+                            )),
+                          ],
+                        ),
+                      ),
                     ],
-                  ),
+                  ],
+                ] else ...[
+                  if (isMobile) ...[
+                    Row(
+                      children: [
+                        const Icon(Icons.person, color: Colors.amberAccent, size: 24),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            first.personName,
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text("${first.phone}  •  ${first.email}", style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                  ] else ...[
+                    Row(
+                      children: [
+                        const Icon(Icons.person, color: Colors.amberAccent, size: 28),
+                        const SizedBox(width: 12),
+                        Text(first.personName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+                        const Spacer(),
+                        Text("${first.phone}  •  ${first.email}", style: const TextStyle(color: Colors.white70, fontSize: 16)),
+                      ],
+                    ),
+                  ],
                 ],
                 Divider(color: Colors.white24, height: isMobile ? 20 : 32),
                 ...userLogs.map((log) {
@@ -3687,16 +4264,52 @@ class _MainDashboardState extends State<MainDashboard> {
             padding: EdgeInsets.all(isMobile ? 14 : 24),
             child: Column(
               children: [
+                _buildBorrowerTypeToggle(isMobile: isMobile),
                 if (isMobile) ...[
-                  _buildTextField(_personNameController, "Person's Name"),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(child: _buildTextField(_phoneController, "Phone Number")),
-                      const SizedBox(width: 8),
-                      Expanded(child: _buildTextField(_emailController, "Email Address")),
+                  if (_selectedBorrowerType == "individual") ...[
+                    _buildTextField(_personNameController, "Person's Name", icon: Icons.person_outline),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(child: _buildTextField(_phoneController, "Phone Number", icon: Icons.phone_outlined)),
+                        const SizedBox(width: 8),
+                        Expanded(child: _buildTextField(_emailController, "Email Address", icon: Icons.email_outlined)),
+                      ],
+                    ),
+                  ] else ...[
+                    _buildTextField(
+                      _teamNameController,
+                      "Team / Project Name (e.g. Robotics Alpha)",
+                      icon: Icons.groups_rounded,
+                      onChanged: (_) => setState(() {}),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildTextField(
+                      _personNameController,
+                      "Project Manager / Lead (e.g. Ayoub)",
+                      icon: Icons.person_pin_outlined,
+                      onChanged: (_) => setState(() {}),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildTextField(
+                      _teamMembersController,
+                      "Team Members (e.g. Ayoub, Antigravity - comma separated)",
+                      icon: Icons.group_add_outlined,
+                      onChanged: (_) => setState(() {}),
+                    ),
+                    if (_teamMembersController.text.trim().isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      _buildTeamMemberChipsPreview(_teamMembersController.text, isMobile: true),
                     ],
-                  ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(child: _buildTextField(_phoneController, "Contact Phone", icon: Icons.phone_outlined)),
+                        const SizedBox(width: 8),
+                        Expanded(child: _buildTextField(_emailController, "Contact Email", icon: Icons.email_outlined)),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   _buildBorrowTopicSelectorWidget(height: 48),
                   const SizedBox(height: 8),
@@ -3720,24 +4333,91 @@ class _MainDashboardState extends State<MainDashboard> {
                     height: 48,
                     child: ElevatedButton.icon(
                       onPressed: _inventory.isEmpty ? null : _addBorrowerLog,
-                      icon: const Icon(Icons.assignment_ind, color: Colors.white, size: 20),
-                      label: const Text("Complete Checkout", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                      icon: Icon(_selectedBorrowerType == "team" ? Icons.group_add : Icons.assignment_ind, color: Colors.white, size: 20),
+                      label: Text(
+                        _selectedBorrowerType == "team" ? "Complete Team Checkout" : "Complete Checkout",
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                      ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _inventory.isEmpty ? Colors.grey : Colors.green,
+                        backgroundColor: _inventory.isEmpty
+                            ? Colors.grey
+                            : (_selectedBorrowerType == "team" ? const Color(0xFF00C9A7) : Colors.green),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
                     ),
                   ),
                 ] else ...[
-                  Row(
-                    children: [
-                      Expanded(flex: 2, child: _buildTextField(_personNameController, "Person's Name")),
-                      const SizedBox(width: 12),
-                      Expanded(flex: 2, child: _buildTextField(_phoneController, "Phone Number")),
-                      const SizedBox(width: 12),
-                      Expanded(flex: 2, child: _buildTextField(_emailController, "Email Address")),
+                  if (_selectedBorrowerType == "individual") ...[
+                    Row(
+                      children: [
+                        Expanded(flex: 2, child: _buildTextField(_personNameController, "Person's Name", icon: Icons.person_outline)),
+                        const SizedBox(width: 12),
+                        Expanded(flex: 2, child: _buildTextField(_phoneController, "Phone Number", icon: Icons.phone_outlined)),
+                        const SizedBox(width: 12),
+                        Expanded(flex: 2, child: _buildTextField(_emailController, "Email Address", icon: Icons.email_outlined)),
+                      ],
+                    ),
+                  ] else ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: _buildTextField(
+                            _teamNameController,
+                            "Team / Project Name (e.g. Robotics Alpha)",
+                            icon: Icons.groups_rounded,
+                            onChanged: (_) => setState(() {}),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 3,
+                          child: _buildTextField(
+                            _personNameController,
+                            "Project Manager / Team Lead (e.g. Ayoub)",
+                            icon: Icons.person_pin_outlined,
+                            onChanged: (_) => setState(() {}),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 4,
+                          child: _buildTextField(
+                            _teamMembersController,
+                            "Team Members (e.g. Ayoub, Antigravity - comma separated)",
+                            icon: Icons.group_add_outlined,
+                            onChanged: (_) => setState(() {}),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: _buildTextField(
+                            _phoneController,
+                            "Contact Phone",
+                            icon: Icons.phone_outlined,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: _buildTextField(
+                            _emailController,
+                            "Contact Email",
+                            icon: Icons.email_outlined,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_teamMembersController.text.trim().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _buildTeamMemberChipsPreview(_teamMembersController.text, isMobile: false),
                     ],
-                  ),
+                  ],
                   const SizedBox(height: 14),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
@@ -3754,10 +4434,15 @@ class _MainDashboardState extends State<MainDashboard> {
                       const SizedBox(width: 12),
                       ElevatedButton.icon(
                         onPressed: _inventory.isEmpty ? null : _addBorrowerLog,
-                        icon: const Icon(Icons.assignment_ind, color: Colors.white),
-                        label: const Text("Checkout", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        icon: Icon(_selectedBorrowerType == "team" ? Icons.group_add : Icons.assignment_ind, color: Colors.white),
+                        label: Text(
+                          _selectedBorrowerType == "team" ? "Team Checkout" : "Checkout",
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _inventory.isEmpty ? Colors.grey : Colors.green,
+                          backgroundColor: _inventory.isEmpty
+                              ? Colors.grey
+                              : (_selectedBorrowerType == "team" ? const Color(0xFF00C9A7) : Colors.green),
                           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
@@ -3772,14 +4457,20 @@ class _MainDashboardState extends State<MainDashboard> {
         SizedBox(height: isMobile ? 12 : 24),
         if (isMobile) ...[
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text("📋 Records", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-              const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(color: Colors.blueAccent.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.blueAccent)),
-                child: Text("${filteredBorrowers.length} checkouts", style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 11)),
+              Row(
+                children: [
+                  const Text("📋 Records", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(color: Colors.blueAccent.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.blueAccent)),
+                    child: Text("${filteredBorrowers.length}", style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 11)),
+                  ),
+                ],
               ),
+              _buildBorrowTypeFilters(isMobile: true),
             ],
           ),
           const SizedBox(height: 8),
@@ -3792,11 +4483,7 @@ class _MainDashboardState extends State<MainDashboard> {
                 children: [
                   const Text("📋 Borrowers Records", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
                   const SizedBox(width: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(color: Colors.blueAccent.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.blueAccent)),
-                    child: Text("${filteredBorrowers.length} checkouts", style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 12)),
-                  ),
+                  _buildBorrowTypeFilters(isMobile: false),
                 ],
               ),
               SizedBox(
@@ -3830,10 +4517,26 @@ class _MainDashboardState extends State<MainDashboard> {
     return borrowersContent;
   }
 
-  Widget _buildTextField(TextEditingController controller, String label, {bool isNumber = false}) {
+  Widget _buildTextField(
+    TextEditingController controller,
+    String label, {
+    bool isNumber = false,
+    IconData? icon,
+    ValueChanged<String>? onChanged,
+  }) {
     return TextField(
-      controller: controller, keyboardType: isNumber ? TextInputType.number : TextInputType.text, style: const TextStyle(color: Colors.white),
-      decoration: InputDecoration(labelText: label, labelStyle: const TextStyle(color: Colors.white54), filled: true, fillColor: Colors.black26, border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none)),
+      controller: controller,
+      keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+      style: const TextStyle(color: Colors.white),
+      onChanged: onChanged,
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: Colors.white54),
+        prefixIcon: icon != null ? Icon(icon, color: Colors.white54, size: 20) : null,
+        filled: true,
+        fillColor: Colors.black26,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+      ),
     );
   }
 }
