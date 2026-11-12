@@ -74,8 +74,10 @@ jobs:
         working-directory: wameedh_app
         run: |
           flutter build apk --release --no-tree-shake-icons --verbose > ../android_build.log 2>&1 || {
-            echo "::error::Android Build Failed! Showing last 150 lines of verbose build log:"
-            tail -n 150 ../android_build.log
+            echo "## ❌ Android Build Failure Diagnostics" >> $GITHUB_STEP_SUMMARY
+            echo '```text' >> $GITHUB_STEP_SUMMARY
+            tail -n 120 ../android_build.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
             exit 1
           }
 
