@@ -593,11 +593,9 @@ class _MainDashboardState extends State<MainDashboard> {
                                       padding: const EdgeInsets.symmetric(vertical: 3),
                                       child: Row(
                                         children: [
-                                          Icon(
-                                            b.isTeam ? Icons.groups_rounded : Icons.person,
-                                            size: 16,
-                                            color: b.isTeam ? const Color(0xFF00C9A7) : Colors.amberAccent,
-                                          ),
+                                          b.isTeam
+                                              ? const Icon(Icons.groups_rounded, size: 16, color: Color(0xFF00C9A7))
+                                              : const Icon(Icons.person, size: 16, color: Colors.amberAccent),
                                           const SizedBox(width: 8),
                                           Expanded(
                                             child: Text(
@@ -4333,7 +4331,9 @@ class _MainDashboardState extends State<MainDashboard> {
                     height: 48,
                     child: ElevatedButton.icon(
                       onPressed: _inventory.isEmpty ? null : _addBorrowerLog,
-                      icon: Icon(_selectedBorrowerType == "team" ? Icons.group_add : Icons.assignment_ind, color: Colors.white, size: 20),
+                      icon: _selectedBorrowerType == "team"
+                          ? const Icon(Icons.group_add, color: Colors.white, size: 20)
+                          : const Icon(Icons.assignment_ind, color: Colors.white, size: 20),
                       label: Text(
                         _selectedBorrowerType == "team" ? "Complete Team Checkout" : "Complete Checkout",
                         style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
@@ -4434,7 +4434,9 @@ class _MainDashboardState extends State<MainDashboard> {
                       const SizedBox(width: 12),
                       ElevatedButton.icon(
                         onPressed: _inventory.isEmpty ? null : _addBorrowerLog,
-                        icon: Icon(_selectedBorrowerType == "team" ? Icons.group_add : Icons.assignment_ind, color: Colors.white),
+                        icon: _selectedBorrowerType == "team"
+                            ? const Icon(Icons.group_add, color: Colors.white)
+                            : const Icon(Icons.assignment_ind, color: Colors.white),
                         label: Text(
                           _selectedBorrowerType == "team" ? "Team Checkout" : "Checkout",
                           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),

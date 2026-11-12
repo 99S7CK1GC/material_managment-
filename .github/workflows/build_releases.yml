@@ -72,7 +72,7 @@ jobs:
 
       - name: Build Android Release APK
         working-directory: wameedh_app
-        run: flutter build apk --release
+        run: flutter build apk --release --no-tree-shake-icons
 
       - name: Stage Android APK Artifact
         shell: bash
