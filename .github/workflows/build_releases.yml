@@ -47,7 +47,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          cache: true
+          cache: false
 
       - name: Configure .env credentials
         shell: bash
@@ -72,7 +72,20 @@ jobs:
 
       - name: Build Android Release APK
         working-directory: wameedh_app
-        run: flutter build apk --release --no-tree-shake-icons
+        run: |
+          flutter build apk --release --no-tree-shake-icons --verbose > ../android_build.log 2>&1 || {
+            echo "::error::Android Build Failed! Showing last 150 lines of verbose build log:"
+            tail -n 150 ../android_build.log
+            exit 1
+          }
+
+      - name: Upload Android Build Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-Build-Log
+          path: android_build.log
+          if-no-files-found: ignore
 
       - name: Stage Android APK Artifact
         shell: bash
@@ -224,6 +237,7 @@ jobs:
   release:
     name: Publish Release Artifacts
     needs: [build-android, build-windows, build-linux]
+    if: always() && !cancelled() && (needs.build-android.result == 'success' || needs.build-windows.result == 'success' || needs.build-linux.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -231,18 +245,21 @@ jobs:
 
       - name: Download Android Artifact
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: Wameedh-Android
           path: release-downloads
 
       - name: Download Windows Artifact
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: Wameedh-Windows-x64
           path: release-downloads
 
       - name: Download Linux Artifact
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: Wameedh-Linux-x64
           path: release-downloads
@@ -271,9 +288,7 @@ jobs:
           draft: false
           generate_release_notes: true
           files: |
-            release-downloads/Wameedh-Android.apk
-            release-downloads/Wameedh-Windows-x64.zip
-            release-downloads/Wameedh-Linux-x64.tar.gz
+            release-downloads/*
           body: |
             ## ⚡ Wameedh Material Organizer — Release Downloads
 
