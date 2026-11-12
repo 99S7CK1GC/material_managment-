@@ -74,10 +74,15 @@ jobs:
         working-directory: wameedh_app
         run: |
           flutter build apk --release --no-tree-shake-icons --verbose > ../android_build.log 2>&1 || {
-            echo "## ❌ Android Build Failure Diagnostics" >> $GITHUB_STEP_SUMMARY
-            echo '```text' >> $GITHUB_STEP_SUMMARY
-            tail -n 120 ../android_build.log >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -A 10 -B 2 "FAILURE" ../android_build.log | while IFS= read -r line; do
+              echo "::error title=Gradle Failure::$line"
+            done
+            grep -A 10 -B 2 "What went wrong" ../android_build.log | while IFS= read -r line; do
+              echo "::error title=What Went Wrong::$line"
+            done
+            tail -n 25 ../android_build.log | while IFS= read -r line; do
+              echo "::error title=Log Tail::$line"
+            done
             exit 1
           }
 
