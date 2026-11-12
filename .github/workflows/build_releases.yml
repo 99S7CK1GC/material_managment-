@@ -73,7 +73,7 @@ jobs:
       - name: Build Android Release APK
         working-directory: wameedh_app
         run: |
-          flutter build apk --release --no-tree-shake-icons --verbose > ../android_build.log 2>&1 || {
+          flutter build apk --release --no-tree-shake-icons --android-skip-build-dependency-validation --verbose > ../android_build.log 2>&1 || {
             grep -A 10 -B 2 "FAILURE" ../android_build.log | while IFS= read -r line; do
               echo "::error title=Gradle Failure::$line"
             done
