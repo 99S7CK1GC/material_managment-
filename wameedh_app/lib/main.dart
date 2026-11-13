@@ -2757,74 +2757,178 @@ class _MainDashboardState extends State<MainDashboard> {
     final inventoryContent = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                Text(isMobile ? "📦 Inventory" : "📦 Electronics Inventory", style: TextStyle(fontSize: isMobile ? 20 : 32, fontWeight: FontWeight.bold, color: Colors.white)),
-                const SizedBox(width: 10),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white10,
-                    borderRadius: BorderRadius.circular(12),
+        if (isMobile)
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 10,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    "📦 Inventory",
+                    style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold, color: Colors.white),
                   ),
-                  child: Text(
-                    "${filteredInventory.length} ${filteredInventory.length == 1 ? 'item' : 'items'}",
-                    style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.white10,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      "${filteredInventory.length} ${filteredInventory.length == 1 ? 'item' : 'items'}",
+                      style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
                   ),
-                ),
-              ],
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: () => _showExportInventoryDialog(filteredInventory),
-                  icon: const Icon(Icons.file_download_outlined, color: Colors.amberAccent, size: 18),
-                  label: Text(
-                    isMobile ? "Export" : "Export (Excel / PDF)",
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                ],
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () => _showExportInventoryDialog(filteredInventory),
+                    icon: const Icon(Icons.file_download_outlined, color: Colors.amberAccent, size: 16),
+                    label: const Text(
+                      "Export",
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF203a43),
+                      foregroundColor: Colors.white,
+                      side: BorderSide(color: Colors.amberAccent.withValues(alpha: 0.5)),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
                   ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF203a43),
-                    foregroundColor: Colors.white,
-                    side: BorderSide(color: Colors.amberAccent.withValues(alpha: 0.5)),
-                    padding: EdgeInsets.symmetric(horizontal: isMobile ? 10 : 14, vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  const SizedBox(width: 8),
+                  // Segmented Layout switcher (Table vs Card view)
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white10,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.white12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        InkWell(
+                          borderRadius: const BorderRadius.horizontal(left: Radius.circular(7)),
+                          onTap: () {
+                            if (_isCardView) setState(() => _isCardView = false);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: !_isCardView ? Colors.amberAccent.withValues(alpha: 0.25) : Colors.transparent,
+                              borderRadius: const BorderRadius.horizontal(left: Radius.circular(7)),
+                            ),
+                            child: Icon(
+                              Icons.table_rows_rounded,
+                              size: 18,
+                              color: !_isCardView ? Colors.amberAccent : Colors.white54,
+                            ),
+                          ),
+                        ),
+                        Container(width: 1, height: 16, color: Colors.white12),
+                        InkWell(
+                          borderRadius: const BorderRadius.horizontal(right: Radius.circular(7)),
+                          onTap: () {
+                            if (!_isCardView) setState(() => _isCardView = true);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: _isCardView ? Colors.amberAccent.withValues(alpha: 0.25) : Colors.transparent,
+                              borderRadius: const BorderRadius.horizontal(right: Radius.circular(7)),
+                            ),
+                            child: Icon(
+                              Icons.grid_view_rounded,
+                              size: 18,
+                              color: _isCardView ? Colors.amberAccent : Colors.white54,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                // Layout switcher (Table vs Card view)
-                Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.table_rows_rounded),
-                        tooltip: "Table View",
-                        color: !_isCardView ? Colors.amberAccent : Colors.white54,
-                        onPressed: () {
-                          if (_isCardView) setState(() => _isCardView = false);
-                        },
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.grid_view_rounded),
-                        tooltip: "Card View",
-                        color: _isCardView ? Colors.amberAccent : Colors.white54,
-                        onPressed: () {
-                          if (!_isCardView) setState(() => _isCardView = true);
-                        },
-                      ),
-                    ],
+                ],
+              ),
+            ],
+          )
+        else
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Text("📦 Electronics Inventory", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
+                  const SizedBox(width: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white10,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      "${filteredInventory.length} ${filteredInventory.length == 1 ? 'item' : 'items'}",
+                      style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ],
-        ),
+                ],
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () => _showExportInventoryDialog(filteredInventory),
+                    icon: const Icon(Icons.file_download_outlined, color: Colors.amberAccent, size: 18),
+                    label: const Text(
+                      "Export (Excel / PDF)",
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF203a43),
+                      foregroundColor: Colors.white,
+                      side: BorderSide(color: Colors.amberAccent.withValues(alpha: 0.5)),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Layout switcher (Table vs Card view)
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.table_rows_rounded),
+                          tooltip: "Table View",
+                          color: !_isCardView ? Colors.amberAccent : Colors.white54,
+                          onPressed: () {
+                            if (_isCardView) setState(() => _isCardView = false);
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.grid_view_rounded),
+                          tooltip: "Card View",
+                          color: _isCardView ? Colors.amberAccent : Colors.white54,
+                          onPressed: () {
+                            if (!_isCardView) setState(() => _isCardView = true);
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         const SizedBox(height: 12),
         // Search Bars Row / Column
         if (isMobile) ...[
@@ -3124,17 +3228,17 @@ class _MainDashboardState extends State<MainDashboard> {
       shrinkWrap: isMobile,
       physics: isMobile ? const NeverScrollableScrollPhysics() : const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
       gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: isMobile ? 220 : 310,
-        mainAxisSpacing: 14,
-        crossAxisSpacing: 14,
-        childAspectRatio: isMobile ? 0.70 : 0.82,
+        maxCrossAxisExtent: isMobile ? 200 : 310,
+        mainAxisSpacing: isMobile ? 12 : 14,
+        crossAxisSpacing: isMobile ? 12 : 14,
+        childAspectRatio: isMobile ? 0.58 : 0.82,
       ),
       itemCount: items.length,
-      itemBuilder: (context, index) => _buildMaterialCard(items[index]),
+      itemBuilder: (context, index) => _buildMaterialCard(items[index], isMobile: isMobile),
     );
   }
 
-  Widget _buildMaterialCard(MaterialItem item) {
+  Widget _buildMaterialCard(MaterialItem item, {bool isMobile = false}) {
     final bytes = item.imageBytes;
     final hasDesc = item.description != null && item.description!.trim().isNotEmpty;
     return RepaintBoundary(
@@ -3155,13 +3259,13 @@ class _MainDashboardState extends State<MainDashboard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image / Photo header - Made significantly bigger (height: 195)
+            // Image / Photo header - Reduced on mobile so content fits cleanly
             Stack(
               children: [
                 InkWell(
                   onTap: () => _showMaterialDetailsDialog(item),
                   child: Container(
-                    height: 195,
+                    height: isMobile ? 115.0 : 195.0,
                     width: double.infinity,
                     color: Colors.black26,
                     child: bytes != null
@@ -3170,24 +3274,24 @@ class _MainDashboardState extends State<MainDashboard> {
                             cacheWidth: 500,
                             fit: BoxFit.cover,
                             filterQuality: FilterQuality.low,
-                            errorBuilder: (_, __, _) => const Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 36)),
+                            errorBuilder: (context, error, stackTrace) => const Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 36)),
                           )
-                        : const Center(child: Icon(Icons.inventory_2_outlined, color: Colors.white30, size: 52)),
+                        : Icon(Icons.inventory_2_outlined, color: Colors.white30, size: isMobile ? 40 : 52),
                   ),
                 ),
                 Positioned(
                   top: 8,
                   right: 8,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    padding: EdgeInsets.symmetric(horizontal: isMobile ? 7 : 9, vertical: isMobile ? 3 : 4),
                     decoration: BoxDecoration(
                       color: const Color(0xFF0f2027).withValues(alpha: 0.88),
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(isMobile ? 8 : 10),
                       border: Border.all(color: Colors.amberAccent.withValues(alpha: 0.5)),
                     ),
                     child: Text(
                       item.category,
-                      style: const TextStyle(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                      style: TextStyle(color: Colors.amberAccent, fontSize: isMobile ? 10 : 11, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),
@@ -3198,74 +3302,87 @@ class _MainDashboardState extends State<MainDashboard> {
               child: InkWell(
                 onTap: () => _showMaterialDetailsDialog(item),
                 child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.name,
-                      style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (hasDesc) ...[
-                      const SizedBox(height: 4),
+                  padding: EdgeInsets.symmetric(horizontal: isMobile ? 10 : 14, vertical: isMobile ? 8 : 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        item.description!.trim(),
-                        style: const TextStyle(color: Colors.white60, fontSize: 12),
+                        item.name,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: isMobile ? 13.5 : 16,
+                          fontWeight: FontWeight.bold,
+                          height: 1.2,
+                        ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                    ],
-                    const Spacer(),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.greenAccent.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            "Stock: ${item.quantity}",
-                            style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 13),
-                          ),
-                        ),
+                      if (hasDesc && !isMobile) ...[
+                        const SizedBox(height: 4),
                         Text(
-                          item.date,
-                          style: const TextStyle(color: Colors.white38, fontSize: 11),
+                          item.description!.trim(),
+                          style: const TextStyle(color: Colors.white60, fontSize: 12),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
-                    ),
-                    const SizedBox(height: 6),
-                    const Divider(color: Colors.white12, height: 1),
-                    const SizedBox(height: 2),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit_outlined, color: Colors.blueAccent, size: 20),
-                          tooltip: "Edit Material",
-                          padding: const EdgeInsets.all(4),
-                          constraints: const BoxConstraints(),
-                          onPressed: () => _editInventoryItemDialog(item),
-                        ),
-                        const SizedBox(width: 10),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                          tooltip: "Delete Material",
-                          padding: const EdgeInsets.all(4),
-                          constraints: const BoxConstraints(),
-                          onPressed: () => _confirmDeleteDialog(item),
-                        ),
-                      ],
-                    ),
-                  ],
+                      const Spacer(),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Container(
+                            padding: EdgeInsets.symmetric(horizontal: isMobile ? 6 : 8, vertical: isMobile ? 3 : 4),
+                            decoration: BoxDecoration(
+                              color: Colors.greenAccent.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(isMobile ? 6 : 8),
+                            ),
+                            child: Text(
+                              "Stock: ${item.quantity}",
+                              style: TextStyle(
+                                color: Colors.greenAccent,
+                                fontWeight: FontWeight.bold,
+                                fontSize: isMobile ? 11.5 : 13,
+                              ),
+                            ),
+                          ),
+                          Flexible(
+                            child: Text(
+                              item.date,
+                              style: TextStyle(color: Colors.white38, fontSize: isMobile ? 10 : 11),
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.end,
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: isMobile ? 4 : 6),
+                      const Divider(color: Colors.white12, height: 1),
+                      SizedBox(height: isMobile ? 1 : 2),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          IconButton(
+                            icon: Icon(Icons.edit_outlined, color: Colors.blueAccent, size: isMobile ? 18 : 20),
+                            tooltip: "Edit Material",
+                            padding: EdgeInsets.all(isMobile ? 3 : 4),
+                            constraints: const BoxConstraints(),
+                            onPressed: () => _editInventoryItemDialog(item),
+                          ),
+                          SizedBox(width: isMobile ? 8 : 10),
+                          IconButton(
+                            icon: Icon(Icons.delete_outline, color: Colors.redAccent, size: isMobile ? 18 : 20),
+                            tooltip: "Delete Material",
+                            padding: EdgeInsets.all(isMobile ? 3 : 4),
+                            constraints: const BoxConstraints(),
+                            onPressed: () => _confirmDeleteDialog(item),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
           ],
         ),
       ),
