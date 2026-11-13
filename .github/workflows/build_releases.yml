@@ -9,13 +9,13 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release Tag (e.g. v1.0.0)'
+        description: 'Release Tag (e.g. v1.2.0)'
         required: true
-        default: 'v1.0.0'
+        default: 'v1.2.0'
       release_name:
-        description: 'Release Name (e.g. Wameedh v1.0.0)'
+        description: 'Release Name (e.g. Wameedh v1.2.0)'
         required: false
-        default: 'Wameedh v1.0.0'
+        default: 'Wameedh v1.2.0'
       prerelease:
         description: 'Mark as pre-release'
         type: boolean
@@ -280,7 +280,7 @@ jobs:
           elif [ "${{ github.ref_type }}" = "tag" ]; then
             TAG="${{ github.ref_name }}"
           else
-            TAG="v1.0.0"
+            TAG="v1.2.0"
           fi
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 

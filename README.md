@@ -5,6 +5,7 @@
 # <p align="center">⚡ Wameedh Logistics & Material Manager (وميض)</p>
 
 <p align="center">
+  <a href="https://github.com/99S7CK1GC/material_managment-/releases/tag/v1.2.0"><img src="https://img.shields.io/badge/Release-v1.2.0-orange?logo=github&logoColor=white" alt="Release v1.2.0" /></a>
   <a href="https://flutter.dev"><img src="https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter&logoColor=white" alt="Flutter" /></a>
   <a href="https://github.com/99S7CK1GC/material_managment-/releases"><img src="https://img.shields.io/badge/Platforms-Android%20%7C%20Windows%20%7C%20Linux-brightgreen" alt="Platforms" /></a>
   <a href="https://neon.tech"><img src="https://img.shields.io/badge/Database-Neon%20PostgreSQL-00E599?logo=postgresql&logoColor=white" alt="Database" /></a>
@@ -14,6 +15,28 @@
 **Wameedh (وميض)** is a modern, real-time logistics and electronics inventory management system tailored for maker spaces, robotics clubs, and lab logistics teams. 
 
 Connected to a cloud-hosted **Neon PostgreSQL** database, Wameedh allows team members to manage inventory, log material checkouts, and process returns simultaneously across mobile and desktop devices with real-time sync.
+
+---
+
+## 🚀 What's New in v1.2.0
+
+### 👥 Team Borrower Management
+- **Full Team / Project Group Loans**: Check out shared components to an entire project team under a single record.
+- **Project Manager & Member Roster**: Dedicated input fields and badges for the Project Manager / Lead and individual team members (e.g. `Ayoub, Antigravity`).
+- **Single Component Deduction**: Checking out 1 breadboard and 1 Arduino for a 2-person team accurately deducts exactly 1 unit of each component from stock while tracking all team members responsible.
+- **Dedicated Filter Tabs & Deep Search**: Quickly switch between `All`, `👤 Individuals`, and `👥 Teams` with real-time search across team names, project managers, and team members.
+
+### 📱 Mobile Responsive UI Overhaul
+- **Resolved View Toggle Clipping**: Replaced rigid icon buttons with a custom, sleek segmented switcher pill (34px height) to ensure both Table and Grid view toggles are fully visible on narrow mobile viewports.
+- **Eliminated Header Button Overlap**: Introduced responsive `Wrap` layouts so the item count badge (`"82 items"`) and `"Export"` button never collide or overlap on mobile screens.
+- **Enhanced 2-Column Grid Cards**:
+  - Balanced card image heights (from 195px to 115px) on mobile.
+  - Adjusted grid aspect ratio (`childAspectRatio: 0.58`), expanding content room to ~160px.
+  - Full item names (`maxLines: 2`), stock count badges, and action buttons now render cleanly without truncation or overflow.
+
+### ⚡ Build & Infrastructure Upgrades
+- Upgraded Android Gradle Plugin to **9.1.1** for full compatibility with Flutter stable releases.
+- Multiplatform automated releases for Android, Windows, and Linux via GitHub Actions.
 
 ---
 
@@ -60,13 +83,13 @@ Connected to a cloud-hosted **Neon PostgreSQL** database, Wameedh allows team me
 
 Pre-built binaries are automatically built and published via GitHub Actions for every release:
 
-👉 **[Download Latest Releases](https://github.com/99S7CK1GC/material_managment-/releases)**
+👉 **[Download Latest Releases (v1.2.0)](https://github.com/99S7CK1GC/material_managment-/releases/tag/v1.2.0)**
 
-| Platform | Package | How to Install & Run |
-|---|---|---|
-| 📱 **Android** | `Wameedh-Android.apk` | Download `.apk` to your phone, tap to install (enable "Install unknown apps" if prompted). |
-| 🪟 **Windows** | `Wameedh-Windows-x64.zip` | Download, extract `.zip`, and run `wameedh_app.exe` (no installation required). |
-| 🐧 **Linux** | `Wameedh-Linux-x64.tar.gz` | Download, extract `tar -xzvf Wameedh-Linux-x64.tar.gz`, and run `./run.sh`. |
+| Platform | Package | Direct Download | How to Install & Run |
+|---|---|---|---|
+| 📱 **Android** | `Wameedh-Android.apk` | [Download APK](https://github.com/99S7CK1GC/material_managment-/releases/download/v1.2.0/Wameedh-Android.apk) | Download `.apk` to your phone, tap to install (enable "Install unknown apps" if prompted). |
+| 🪟 **Windows** | `Wameedh-Windows-x64.zip` | [Download ZIP](https://github.com/99S7CK1GC/material_managment-/releases/download/v1.2.0/Wameedh-Windows-x64.zip) | Download, extract `.zip`, and run `wameedh_app.exe` (no installation required). |
+| 🐧 **Linux** | `Wameedh-Linux-x64.tar.gz` | [Download TAR.GZ](https://github.com/99S7CK1GC/material_managment-/releases/download/v1.2.0/Wameedh-Linux-x64.tar.gz) | Download, extract `tar -xzvf Wameedh-Linux-x64.tar.gz`, and run `./run.sh`. |
 
 ---
 
